@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
+import { Box, Button, IconButton, Tooltip } from '@mui/material';
 import ChatIcon from '@mui/icons-material/Chat';
 import BuildIcon from '@mui/icons-material/Build';
 import GroupsIcon from '@mui/icons-material/Groups';
