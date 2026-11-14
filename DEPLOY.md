@@ -1,248 +1,149 @@
 # Deploying Astro Chat to a Raspberry Pi
 
-The app is a static React build. The pipeline is:
+The app is a static React build served by nginx in a container. It deploys from a
+**self-hosted GitHub Actions runner that lives on the Pi** — self-hosted minutes are
+free, the build is native arm64, and there is no image registry, no SSH hop and no
+extra network to configure.
 
 ```
-git push main
-   └─ GitHub Actions
-        ├─ npm ci / test / build            (x86 runner, fast)
-        ├─ docker build --target runtime     (linux/arm64 image, no QEMU npm build)
-        ├─ push ghcr.io/<owner>/<repo>:sha-<commit>
-        └─ ssh into the Pi
-             ├─ scp docker-compose.yml
-             └─ docker compose pull && up -d
-                  └─ nginx :8082 → static files + SPA fallback
+git push main (kundali-webapp)
+   └─ GitHub Actions → runner on the Pi (raspi-astro)
+        ├─ npm ci && npm test && npm run build
+        ├─ docker build --target runtime -t astro-chat:<sha>
+        └─ docker compose up -d   (port 8082)
 ```
-
-Why Docker: the Pi only needs Docker (no Node, no build tools, no nginx config), the
-image is identical every time, and rolling back is just deploying an older `sha-` tag.
-
-Files added for this:
 
 | File | Purpose |
 |---|---|
-| `Dockerfile` | `runtime` target serves `./build` (used by CI); `full` target compiles from source |
-| `nginx.conf` | SPA fallback (`/services` etc.), long cache for hashed assets, gzip, basic security headers |
-| `docker-compose.yml` | Container `astro-chat`, port `8082:80`, restart policy, healthcheck |
+| `Dockerfile` | `runtime` target serves `./build`; `full` target compiles inside the image |
+| `nginx.conf` | SPA fallback (`/services` etc.), immutable cache for hashed assets, gzip, security headers |
+| `docker-compose.yml` | Container `astro-chat`, `8082:80`, `restart: unless-stopped`, healthcheck |
+| `.github/workflows/deploy.yml` | The single self-hosted job above |
 | `.dockerignore` | Keeps the build context small |
-| `.github/workflows/deploy.yml` | Build → GHCR → deploy on push to `main` |
+
+> This repo is the `webapp/` child of [asmaurya/kundali-proj](https://github.com/asmaurya/kundali-proj).
+> Pushes must go to **this** repo; the mother repo only stores the submodule pointer.
 
 ---
 
-## 1. One-time: prepare the Pi
-
-SSH in:
+## 1. Pi prerequisites (already done on `raspi`)
 
 ```bash
-ssh <user>@<pi-host>     # e.g. ssh pi@raspberrypi.local
+docker --version && docker compose version      # Docker 29 + Compose v5 on the current Pi
+sudo usermod -aG docker "$USER"                 # re-login afterwards
+mkdir -p ~/astro-chat                           # deploy target (compose file is copied here)
 ```
 
-**Check the architecture** (matters for the image):
-
-```bash
-uname -m
-```
-
-- `aarch64` → 64-bit OS, the workflow's `linux/arm64` image is correct.
-- `armv7l` → 32-bit OS. Either reinstall with Raspberry Pi OS 64-bit (recommended),
-  or change `platforms: linux/arm64` to `linux/arm/v7` in the workflow.
-
-**Check Docker:**
-
-```bash
-docker --version
-docker compose version
-```
-
-If either is missing:
+If Docker is missing:
 
 ```bash
 curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker "$USER"
-newgrp docker          # or log out and back in
-docker compose version # verify the plugin is there
+sudo usermod -aG docker "$USER" && newgrp docker
 ```
 
-**Create the app directory:**
+Architecture matters: the runner and image are **arm64** (`uname -m` → `aarch64`).
+A 32-bit (`armv7l`) OS cannot run them; reinstall Raspberry Pi OS 64-bit.
 
-```bash
-mkdir -p ~/astro-chat
-```
-
-Ports: the container publishes **8082**, so open `http://<pi-ip>:8082`.
-If `8082` is taken, change `"8082:80"` in `docker-compose.yml`.
+Ports: the container publishes **8082** because **8080** is used by `gcode-art-nginx`
+on this Pi. Change `"8082:80"` in `docker-compose.yml` if needed.
 
 ---
 
-## 2. One-time: let GitHub reach the Pi
+## 2. One-time: register the self-hosted runner
 
-GitHub-hosted runners are on the public internet. If your Pi is only on your home
-LAN, they cannot SSH to it. Pick one:
-
-### Option A — Tailscale (already installed on this Pi)
-
-Tailscale is installed on the Pi as hostname **`raspi-astro`**, and
-`.github/workflows/deploy.yml` already joins the tailnet before deploying.
-
-1. Approve the login once (the URL is printed by `sudo tailscale up` on the Pi).
-2. Check the address:
-   ```bash
-   ssh abhi@<pi-lan-ip> "tailscale ip -4"     # 100.x.y.z
-   ```
-3. Create a reusable auth key: Tailscale admin → **Settings → Keys → Generate auth key**
-   (reusable; no need for ephemeral). Add it as the repository secret **`TS_AUTHKEY`**.
-4. Set **`PI_HOST`** to the `100.x.y.z` Tailscale address instead of the LAN IP.
-
-The workflow step that does this:
-```yaml
-- uses: tailscale/github-action@v2
-  with:
-    authkey: ${{ secrets.TS_AUTHKEY }}
-    ping: ${{ secrets.PI_HOST }}
-```
-
-### Option B — self-hosted runner on the Pi (no inbound ports)
+GitHub → this repo → **Settings → Actions → Runners → New self-hosted runner** →
+Linux / ARM64. Copy the token from the page (valid ~1 h), then on the Pi:
 
 ```bash
-# Repository → Settings → Actions → Runners → New self-hosted runner
-# then on the Pi, in a dedicated folder:
 mkdir -p ~/actions-runner && cd ~/actions-runner
-# run the downloaded config command, then:
-sudo ./svc.sh install && sudo ./svc.sh start
+curl -fsSL -o runner.tar.gz \
+  https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-arm64-2.338.2.tar.gz
+tar xzf runner.tar.gz && rm runner.tar.gz
+
+./config.sh \
+  --url https://github.com/asmaurya/kundali-webapp \
+  --token <TOKEN_FROM_GITHUB> \
+  --name raspi-astro \
+  --labels raspi \
+  --unattended --replace
+
+sudo ./svc.sh install "$USER"
+sudo ./svc.sh start
+sudo ./svc.sh status
 ```
 
-Then change `runs-on: ubuntu-latest` for the **deploy** job to `runs-on: self-hosted`.
-With this option the `scp`/`ssh` steps can be replaced by a single
+The service starts on boot and reconnects automatically. Because the runner carries the
+default labels `self-hosted, linux, ARM64`, the workflow's `runs-on: [self-hosted, linux, ARM64]`
+matches it.
 
-```yaml
-- run: cd ~/astro-chat && git -C "$GITHUB_WORKSPACE" show HEAD:docker-compose.yml > docker-compose.yml && docker compose pull && docker compose up -d
-```
-
-### Option C — port-forward SSH on your router
-
-Only if you accept exposing SSH to the internet; use key-only auth, a non-default
-port and fail2ban. Option A is safer.
+No repository secrets are required with this setup.
 
 ---
 
-## 3. One-time: create a deploy key
-
-On your laptop:
+## 3. Deploy
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/pi_deploy -C "github-actions-deploy" -N ""
-ssh-copy-id -i ~/.ssh/pi_deploy.pub <user>@<pi-host>    # or append the .pub to ~/.ssh/authorized_keys on the Pi
-cat ~/.ssh/pi_deploy                                     # copy this private key
+git -C webapp push        # or push from the mother repo after committing in webapp/
 ```
 
-Test it:
+Actions → **Deploy to Raspberry Pi** → the job appears within seconds.
+
+Checks:
 
 ```bash
-ssh -i ~/.ssh/pi_deploy <user>@<pi-host> "docker --version && docker compose version"
+ssh abhi@<pi> "docker ps --filter name=astro-chat"
+ssh abhi@<pi> "docker inspect --format '{{.State.Health.Status}}' astro-chat"
+```
+
+Open `http://<pi-ip>:8082`. Deep links like `/services` work (nginx falls back to `index.html`).
+
+If the job sits at **Queued**, the runner is offline: `sudo ./svc.sh status` and
+`~/actions-runner/_diag/*.log` on the Pi.
+
+---
+
+## 4. Rolling back
+
+Every deploy keeps the image locally as `astro-chat:<7-char-sha>`:
+
+```bash
+cd ~/astro-chat
+IMAGE=astro-chat:<old-sha> docker compose up -d
+docker images astro-chat         # list what is available
 ```
 
 ---
 
-## 4. One-time: repository + secrets
+## 5. Building without CI
 
 ```bash
-git init
-git add .
-git commit -m "Astro Chat web app"
-git branch -M main
-git remote add origin git@github.com:<owner>/<repo>.git
-git push -u origin main
+npm run build && docker build -t astro-chat:local .    # runtime target
+docker build --target full -t astro-chat:local .       # compile inside Docker (no Node needed)
+docker run --rm -p 8080:80 astro-chat:local
 ```
 
-Then in **Settings → Secrets and variables → Actions → New repository secret**:
+Copy a build straight to the Pi:
 
-| Secret | Value |
-|---|---|
-| `PI_HOST` | Pi IP / Tailscale IP / hostname |
-| `PI_USER` | e.g. `pi` |
-| `PI_SSH_KEY` | contents of `~/.ssh/pi_deploy` (the private key, whole file) |
-| `PI_PORT` | optional, defaults to `22` |
-
-**Image visibility:** the package is private by default. Either
-
-- repo → **Packages** → the `astro-chat` package → **Package settings → Change visibility → Public**
-  (fine for a LAN app; the image contains only the compiled frontend), **or**
-- on the Pi log in once with a PAT that has `read:packages`:
-  ```bash
-  echo "<PAT>" | docker login ghcr.io -u <github-user> --password-stdin
-  ```
-
-The workflow triggers on pushes to **`main`**; if your default branch is `master`,
-adjust `branches:` in `.github/workflows/deploy.yml`.
+```bash
+scp -r build abhi@<pi>:~/astro-chat/build
+ssh abhi@<pi> 'cd ~/astro-chat && docker build --target runtime -t astro-chat:manual . && IMAGE=astro-chat:manual docker compose up -d'
+```
 
 ---
 
-## 5. First deploy
-
-Push (or run the workflow manually from the **Actions** tab → *Build and deploy to
-Raspberry Pi* → **Run workflow**):
-
-```bash
-git push
-```
-
-Watch the two jobs. A successful deploy ends with a line like
-`Up 12 seconds (healthy)`.
-
-Verify:
-
-```bash
-ssh <user>@<pi-host> "docker ps --filter name=astro-chat"
-```
-
-Open `http://<pi-ip>:8082`. Deep links such as `/services` work because nginx falls
-back to `index.html`.
-
----
-
-## 6. Day-to-day
-
-- **Deploy:** push to `main`. The image is tagged `sha-<commit>` and `latest`.
-- **Rollback:** on the Pi, run a previous commit's tag:
-  ```bash
-  cd ~/astro-chat
-  IMAGE=ghcr.io/<owner>/<repo>:sha-<old-commit> docker compose up -d
-  ```
-  (Or re-run the workflow on the old commit.)
-- **Logs:** `docker logs -f astro-chat`
-- **Restart:** `cd ~/astro-chat && docker compose restart`
-- **Stop:** `docker compose down`
-
----
-
-## 7. Test the image locally first (optional)
-
-```bash
-npm run build
-docker build -t astro-chat .          # runtime target: serves ./build
-docker run --rm -p 8080:80 astro-chat
-# open http://localhost:8080
-```
-
-Or build everything inside Docker (no Node needed):
-
-```bash
-docker build --target full -t astro-chat .
-```
-
-The local Docker build was verified: `/` and `/services` return 200, hashed assets get
-`Cache-Control: max-age=31536000, immutable`, and the container reports **healthy**.
-
----
-
-## 8. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `exec format error` in container logs | Image arch ≠ Pi OS. `uname -m`: `armv7l` → build `linux/arm/v7`. |
-| Actions deploy job: connection timed out | Runner can't reach the Pi — see §2 (Tailscale or self-hosted runner). |
-| `pull access denied` / `unauthorized` | GHCR package is private: make it public or `docker login ghcr.io` on the Pi. |
-| `docker compose plugin is missing` | `sudo apt-get install -y docker-compose-plugin` |
-| Port 8082 already in use | `sudo ss -ltnp \| grep 8082`, then change the mapping in `docker-compose.yml`. |
-| Blank page / 404 on refresh | nginx config not applied — rebuild the image (it is baked in, not mounted). |
-| Changes not visible | Check the workflow used a new `sha-` tag; hard-refresh (hashed assets are cached 1 year). |
+| Workflow Queued forever | Runner offline — `sudo ./svc.sh status`; re-run `./config.sh` if the token expired |
+| `exec format error` | Image/runner arch ≠ OS. `uname -m` must be `aarch64` |
+| `docker compose` works only with sudo | `sudo usermod -aG docker "$USER"` then log out/in (the runner service must run as that user) |
+| Port 8082 in use | `sudo ss -ltnp \| grep 8082`, then change the mapping in `docker-compose.yml` |
+| 404 on refresh / blank page | nginx config is baked into the image — rebuild, don't mount `index.html` |
+| Disk filling up | `docker system prune -af --volumes`, `npm cache clean --force` |
+| Old deploy still live | `docker compose ps`; the workflow tags images by sha — check `docker images astro-chat` |
+
+### Why not GitHub-hosted runners?
+
+Private repos consume paid Actions minutes on `ubuntu-latest`, and building arm64 there
+needs QEMU emulation. Self-hosted is free, native, and the artifact never leaves the Pi.
