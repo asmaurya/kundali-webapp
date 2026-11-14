@@ -1,0 +1,14 @@
+# Keep the context small: the runtime image only needs build/ + nginx.conf.
+# build/ is intentionally NOT ignored - the runtime stage copies it in.
+node_modules
+.git
+.github
+.gitignore
+docs
+coverage
+README.md
+UI_SPEC.md
+assets
+npm-debug.log*
+.env
+.env.local
