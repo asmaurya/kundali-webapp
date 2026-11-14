@@ -81,6 +81,14 @@ jobs:
       - name: Resolve image
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}" >> "$GITHUB_ENV"
 
+      # The Pi is on a home LAN, so the runner joins the tailnet first.
+      # Requires the TS_AUTHKEY secret (Tailscale admin → Settings → Keys).
+      - name: Join the Tailscale network
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: ${{ secrets.PI_HOST }}
+
       - name: Copy compose file to the Pi
         uses: appleboy/scp-action@v0.1.7
         with:

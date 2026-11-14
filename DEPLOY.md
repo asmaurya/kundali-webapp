@@ -79,24 +79,27 @@ If `8082` is taken, change `"8082:80"` in `docker-compose.yml`.
 GitHub-hosted runners are on the public internet. If your Pi is only on your home
 LAN, they cannot SSH to it. Pick one:
 
-### Option A — Tailscale (works with the default workflow)
+### Option A — Tailscale (already installed on this Pi)
 
-1. Install Tailscale on the Pi and log in:
+Tailscale is installed on the Pi as hostname **`raspi-astro`**, and
+`.github/workflows/deploy.yml` already joins the tailnet before deploying.
+
+1. Approve the login once (the URL is printed by `sudo tailscale up` on the Pi).
+2. Check the address:
    ```bash
-   curl -fsSL https://tailscale.com/install.sh | sh
-   sudo tailscale up
-   tailscale ip -4        # note the 100.x.y.z address
+   ssh abhi@<pi-lan-ip> "tailscale ip -4"     # 100.x.y.z
    ```
-2. Add this step **before** the `scp` step in `.github/workflows/deploy.yml`:
-   ```yaml
-   - uses: tailscale/github-action@v2
-     with:
-       oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-       oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-       tags: tag:ci
-   ```
-   (Create the OAuth client and tag in the Tailscale admin console.)
-3. Set `PI_HOST` to the `100.x.y.z` address.
+3. Create a reusable auth key: Tailscale admin → **Settings → Keys → Generate auth key**
+   (reusable; no need for ephemeral). Add it as the repository secret **`TS_AUTHKEY`**.
+4. Set **`PI_HOST`** to the `100.x.y.z` Tailscale address instead of the LAN IP.
+
+The workflow step that does this:
+```yaml
+- uses: tailscale/github-action@v2
+  with:
+    authkey: ${{ secrets.TS_AUTHKEY }}
+    ping: ${{ secrets.PI_HOST }}
+```
 
 ### Option B — self-hosted runner on the Pi (no inbound ports)
 
