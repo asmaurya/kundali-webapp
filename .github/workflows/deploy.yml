@@ -1,21 +1,20 @@
-name: Build and deploy to Raspberry Pi
+name: Deploy to Raspberry Pi
 
+# Runs on the Pi itself (self-hosted runner): self-hosted minutes are free,
+# the build is native arm64, and no registry or SSH hop is needed.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-astro-chat
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build arm64 image and push to GHCR
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+  deploy:
+    runs-on: [self-hosted, linux, ARM64]
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -36,87 +35,15 @@ jobs:
       - name: Build static site
         run: npm run build
 
-      - name: Resolve lowercase image name
-        id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Build runtime image
+        run: docker build --target runtime -t "astro-chat:${GITHUB_SHA::7}" .
 
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.image.outputs.name }}
-          tags: |
-            type=sha,format=long
-            type=raw,value=latest
-
-      # Only the `runtime` stage is built (it copies ./build), so nothing has
-      # to be compiled under QEMU emulation.
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: runtime
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  deploy:
-    name: Deploy on the Pi
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Resolve image
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}" >> "$GITHUB_ENV"
-
-      # The Pi is on a home LAN, so the runner joins the tailnet first.
-      # Requires the TS_AUTHKEY secret (Tailscale admin → Settings → Keys).
-      - name: Join the Tailscale network
-        uses: tailscale/github-action@v2
-        with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          ping: ${{ secrets.PI_HOST }}
-
-      - name: Copy compose file to the Pi
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.PI_HOST }}
-          username: ${{ secrets.PI_USER }}
-          key: ${{ secrets.PI_SSH_KEY }}
-          port: ${{ secrets.PI_PORT || 22 }}
-          source: docker-compose.yml
-          target: /home/${{ secrets.PI_USER }}/astro-chat
-
-      - name: Pull image and restart the container
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          IMAGE: ${{ env.IMAGE }}
-        with:
-          host: ${{ secrets.PI_HOST }}
-          username: ${{ secrets.PI_USER }}
-          key: ${{ secrets.PI_SSH_KEY }}
-          port: ${{ secrets.PI_PORT || 22 }}
-          envs: IMAGE
-          script: |
-            set -euo pipefail
-            command -v docker >/dev/null 2>&1 || { echo "docker is not installed on the Pi"; exit 1; }
-            docker compose version >/dev/null 2>&1 || { echo "docker compose plugin is missing on the Pi"; exit 1; }
-
-            cd "$HOME/astro-chat"
-            echo "Deploying ${IMAGE}"
-            IMAGE="${IMAGE}" docker compose pull
-            IMAGE="${IMAGE}" docker compose up -d --remove-orphans
-            docker image prune -f
-            docker ps --filter name=astro-chat --format '{{.Status}}'
+      - name: Restart the container
+        run: |
+          set -eu
+          mkdir -p "$HOME/astro-chat"
+          cp docker-compose.yml "$HOME/astro-chat/docker-compose.yml"
+          cd "$HOME/astro-chat"
+          IMAGE="astro-chat:${GITHUB_SHA::7}" docker compose up -d --remove-orphans
+          docker image prune -f
+          docker ps --filter name=astro-chat --format '{{.Names}} {{.Status}} {{.Ports}}'
