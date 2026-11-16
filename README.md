@@ -9,8 +9,9 @@ Targets the FigCraft extract in [`UI_SPEC.md`](./UI_SPEC.md). Not every screen i
 - **Invite gate:** code `KUNDALI-BETA` (override with `REACT_APP_BETA_INVITE_CODE`) + email, stored in `localStorage`.
 - **First run:** Splash → Invite → Birth details → Creating chart → Chat.
 - **Returning users:** open Chat directly when onboarding is complete.
-- **Answers:** scripted / keyword-based on-device (no provider API key in the client).
-- **Persistence:** birth details, chats and family members survive refresh until logout.
+- **Chart:** real Lahiri / whole-sign natal chart computed on-device (`astronomy-engine`).
+- **Answers:** `/api/chat` on the Worker uses the chart context; optional `OPENAI_API_KEY` Worker secret for LLM replies (otherwise chart-aware local replies). No provider key in the browser.
+- **Persistence:** birth details, chart, chats and family members survive refresh until logout.
 - **Subscription:** UI preview only — no billing.
 - **Feedback:** Support → Send feedback (`REACT_APP_FEEDBACK_EMAIL`, default owner inbox).
 
@@ -36,6 +37,6 @@ CI=true npm run build
 Tester checklist: [`docs/BETA_SMOKE.md`](./docs/BETA_SMOKE.md).  
 In-repo Worker assets config: [`wrangler.toml`](./wrangler.toml) (CRA `build/` as SPA).
 
-Workers Builds should run `CI=true npm run build` and publish the `build/` directory. Raspberry Pi Docker deploy ([`DEPLOY.md`](./DEPLOY.md)) is legacy and **not** used for beta testing.
+Workers Builds should run `CI=true npm run build` and publish via `wrangler.toml` (Worker + `build/` assets). Optional Cloudflare secret: `OPENAI_API_KEY` (and `OPENAI_MODEL`, default `gpt-4o-mini`). Raspberry Pi Docker deploy ([`DEPLOY.md`](./DEPLOY.md)) is legacy and **not** used for beta testing.
 
 This repo is the `webapp/` child of [asmaurya/kundali-proj](https://github.com/asmaurya/kundali-proj).

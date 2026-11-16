@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import App from './App';
@@ -31,10 +31,31 @@ const conversation = () => screen.getByRole('region', { name: /conversation/i })
 beforeEach(() => {
   clearBetaSession();
   seedCompletedBetaSession({ email: 'abhishek@example.com' });
+  global.fetch = jest.fn(async (input, init) => {
+    const url = String(input);
+    if (url.includes('/api/chat')) {
+      const body = JSON.parse(init.body);
+      return {
+        ok: true,
+        async json() {
+          return {
+            text: `From the chart: gradual progress rather than a sudden breakthrough for “${body.question}”.`,
+            provider: 'test',
+            used_llm: false,
+          };
+        },
+      };
+    }
+    if (url.includes('/api/health')) {
+      return { ok: true, async json() { return { ok: true, llm: false }; } };
+    }
+    return { ok: false, status: 404, async json() { return {}; } };
+  });
 });
 
 afterEach(() => {
   clearBetaSession();
+  jest.resetAllMocks();
 });
 
 test('homepage renders the chat interface with a composer', () => {
@@ -150,7 +171,7 @@ test('returning users with a completed session land on chat from splash', () => 
   expect(screen.getByPlaceholderText(/ask about your chart/i)).toBeInTheDocument();
 });
 
-test('chats persist across remounts', () => {
+test('chats persist across remounts', async () => {
   const { unmount } = renderApp('/chat');
   fireEvent.click(screen.getByRole('button', { name: /^new chat$/i }));
   const input = screen.getByPlaceholderText(/ask about your chart/i);
@@ -158,9 +179,11 @@ test('chats persist across remounts', () => {
     target: { value: 'Career advice for a switch' },
   });
   fireEvent.submit(input.closest('form'));
-  expect(
-    within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
-  ).toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
+    ).toBeInTheDocument();
+  });
   unmount();
 
   renderApp('/chat');
@@ -185,7 +208,6 @@ test('logout clears the invite and returns to splash', () => {
 
 test('first-run onboarding reaches chat after creating a chart', async () => {
   clearBetaSession();
-  jest.useFakeTimers();
   renderApp('/invite');
 
   fireEvent.change(screen.getByLabelText(/invite code/i), {
@@ -209,13 +231,10 @@ test('first-run onboarding reaches chat after creating a chart', async () => {
 
   expect(screen.getByText(/creating your/i)).toBeInTheDocument();
 
-  await act(async () => {
-    jest.advanceTimersByTime(3000);
-  });
-
-  await waitFor(() => {
-    expect(screen.getByPlaceholderText(/ask about your chart/i)).toBeInTheDocument();
-  });
-
-  jest.useRealTimers();
+  await waitFor(
+    () => {
+      expect(screen.getByPlaceholderText(/ask about your chart/i)).toBeInTheDocument();
+    },
+    { timeout: 8000 }
+  );
 });

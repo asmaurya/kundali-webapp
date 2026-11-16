@@ -6,6 +6,7 @@ export const BETA_INVITE_CODE =
 export const STORAGE_KEYS = {
   session: 'kundali.beta.session',
   birth: 'kundali.beta.birth',
+  chart: 'kundali.beta.chart',
   onboarding: 'kundali.beta.onboardingComplete',
   conversations: 'kundali.beta.conversations',
   activeId: 'kundali.beta.activeId',
@@ -56,6 +57,15 @@ export function getBirthDetails() {
 export function saveBirthDetails(details) {
   writeJson(STORAGE_KEYS.birth, details);
   return details;
+}
+
+export function getChart() {
+  return readJson(STORAGE_KEYS.chart, null);
+}
+
+export function saveChart(chart) {
+  writeJson(STORAGE_KEYS.chart, chart);
+  return chart;
 }
 
 export function isOnboardingComplete() {
