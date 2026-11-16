@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Button, Chip, LinearProgress, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, LinearProgress, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
@@ -30,6 +30,10 @@ function SubscriptionPage({ onBack }) {
           Manage your plan, usage and billing details.
         </Typography>
 
+        <Alert severity="info" sx={{ mt: 2, bgcolor: '#EFE9F7', color: '#3A3550' }}>
+          Beta — coming soon. Billing is disabled in this build. The cards below are UI previews only.
+        </Alert>
+
         <Box
           sx={{
             mt: 3,
@@ -43,8 +47,8 @@ function SubscriptionPage({ onBack }) {
             <Typography sx={{ fontSize: 20, fontWeight: 700 }}>Astro Chat Plus</Typography>
             <Chip
               size="small"
-              label="Active"
-              sx={{ color: '#1E7A36', bgcolor: '#D9F0DC', fontWeight: 600 }}
+              label="Preview"
+              sx={{ color: '#5B3FA0', bgcolor: '#F1ECF6', fontWeight: 600 }}
             />
           </Box>
           <Typography sx={{ mt: 1, fontSize: 14, opacity: 0.9 }}>
@@ -53,15 +57,16 @@ function SubscriptionPage({ onBack }) {
           <Typography sx={{ mt: 2, fontSize: 28, fontWeight: 700 }}>
             ₹499 <Typography component="span" sx={{ fontSize: 14, fontWeight: 400 }}>/ month</Typography>
           </Typography>
-          <Typography sx={{ fontSize: 13, opacity: 0.85 }}>Next renewal on 01 Dec 2026</Typography>
+          <Typography sx={{ fontSize: 13, opacity: 0.85 }}>Not charged during private beta</Typography>
           <Box sx={{ display: 'flex', gap: 1.5, mt: 2.5, flexWrap: 'wrap' }}>
             <Button
               variant="contained"
-              sx={{ bgcolor: '#FFFFFF', color: '#5B3FA0', '&:hover': { bgcolor: '#F1ECF6' } }}
+              disabled
+              sx={{ bgcolor: '#FFFFFF', color: '#5B3FA0', '&.Mui-disabled': { bgcolor: '#F1ECF6', color: '#6A6580' } }}
             >
               Change plan
             </Button>
-            <Button variant="outlined" sx={{ color: '#FFFFFF', borderColor: '#FFFFFF' }}>
+            <Button variant="outlined" disabled sx={{ color: '#FFFFFF', borderColor: '#FFFFFF' }}>
               Cancel subscription
             </Button>
           </Box>

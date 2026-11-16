@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
   Button,
   LinearProgress,
@@ -16,6 +17,7 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import PlaceIcon from '@mui/icons-material/Place';
 import FamilyMemberCard from './FamilyMemberCard';
 import AppModal from './AppModal';
+import { loadFamilyMembers, saveFamilyMembers } from '../betaSession';
 
 const RELATIONS = ['Self', 'Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'];
 
@@ -37,7 +39,11 @@ const primaryButton = { bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } };
 const textButton = { color: '#5B3FA0' };
 
 function FamilyListPage() {
-  const [members, setMembers] = useState(INITIAL_MEMBERS);
+  const [members, setMembers] = useState(() => loadFamilyMembers(INITIAL_MEMBERS));
+
+  useEffect(() => {
+    saveFamilyMembers(members);
+  }, [members]);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [step, setStep] = useState(0);
@@ -117,6 +123,10 @@ function FamilyListPage() {
             Add Family Member
           </Button>
         </Box>
+
+        <Alert severity="info" sx={{ mt: 2, bgcolor: '#EFE9F7', color: '#3A3550' }}>
+          Beta: family profiles stay on this device only. Sync and paid family seats come later.
+        </Alert>
 
         <Box sx={{ mt: 3 }}>
           {members.map((member) => (

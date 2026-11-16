@@ -23,19 +23,21 @@ const ICONS = {
   support: SupportAgentIcon,
 };
 
-const USER = { name: 'Abhishek', plan: 'Astro Chat Plus', initials: 'A' };
+const DEFAULT_USER = { name: 'Beta tester', plan: 'Beta', initials: 'B' };
 
 function SidePanel({
   items,
   activePath,
   expanded,
   isDesktop,
+  user = DEFAULT_USER,
   onExpand,
   onCollapse,
   onNavigate,
   onLogout,
 }) {
   const { conversations, openConversation, startChat } = useChat();
+  const account = user || DEFAULT_USER;
 
   const isActive = (path) =>
     path === '/' ? activePath === '/' || activePath === '/chat' : activePath === path;
@@ -100,9 +102,9 @@ function SidePanel({
         </Box>
 
         <Box className="side-rail__footer">
-          <Tooltip title={`${USER.name} — ${USER.plan}`} placement="right">
-            <Box className="side-rail__avatar" aria-label={USER.name}>
-              {USER.initials}
+          <Tooltip title={`${account.name} — ${account.plan}`} placement="right">
+            <Box className="side-rail__avatar" aria-label={account.name}>
+              {account.initials}
             </Box>
           </Tooltip>
           <Tooltip title="Log out" placement="right">
@@ -235,10 +237,10 @@ function SidePanel({
       </Box>
 
       <Box className="side-panel__user">
-        <Box className="side-panel__user-avatar">{USER.initials}</Box>
+        <Box className="side-panel__user-avatar">{account.initials}</Box>
         <Box sx={{ minWidth: 0 }}>
-          <Box className="side-panel__user-name">{USER.name}</Box>
-          <Box className="side-panel__user-plan">{USER.plan}</Box>
+          <Box className="side-panel__user-name">{account.name}</Box>
+          <Box className="side-panel__user-plan">{account.plan}</Box>
         </Box>
         <Tooltip title="Log out">
           <IconButton

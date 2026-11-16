@@ -1,53 +1,36 @@
-# Kundali Astro Chat - Web Application
+# Kundali Astro Chat — Web Application
 
-A complete web application for astrological services with personalized chart analysis and chat functionality, matching exactly the design from your FigCraft document.
+Invite-only **private beta** of the Astro Chat web app. Native mobile is on hold.
 
-## Features
+Targets the FigCraft extract in [`UI_SPEC.md`](./UI_SPEC.md). Not every screen is pixel-identical; known gaps are listed in [`docs/superpowers/plans/2026-11-16-webapp-beta-prototype.md`](./docs/superpowers/plans/2026-11-16-webapp-beta-prototype.md).
 
-- **Complete Navigation Flow**: Splash → Birth Details → Chart Creation → Chat Interface
-- **Responsive Design**: Works on mobile and desktop devices
-- **Proper Side Panel Positioning**: Within app rectangle, not overlaying browser
-- **Visual Fidelity**: Matches exactly the FigCraft design specifications
-- **Four Main Screens**:
-  - Splash/Welcome screen
-  - Birth details collection form
-  - Chart creation loading screen
-  - Chat interface with astrologer
+## Beta behaviour
 
-## Components
+- **Invite gate:** code `KUNDALI-BETA` (override with `REACT_APP_BETA_INVITE_CODE`) + email, stored in `localStorage`.
+- **First run:** Splash → Invite → Birth details → Creating chart → Chat.
+- **Returning users:** open Chat directly when onboarding is complete.
+- **Answers:** scripted / keyword-based on-device (no provider API key in the client).
+- **Persistence:** birth details, chats and family members survive refresh until logout.
+- **Subscription:** UI preview only — no billing.
+- **Feedback:** Support → Send feedback (`REACT_APP_FEEDBACK_EMAIL`, default owner inbox).
 
-1. `SplashScreen.js` - Initial welcome screen with animated elements
-2. `BirthDetailsScreen.js` - Form for collecting birth information  
-3. `CreatingChartScreen.js` - Loading screen with animation
-4. `ChatInterface.js` - Chat functionality with message bubbles
-5. `SidePanel.js` - Fixed positioning navigation panel
-6. `ServicesPage.js` - Services offerings display
-7. `ProfilePage.js` - User profile management
-8. `HomePage.js` - Main dashboard with quick access buttons
-9. `KundaliChartPage.js` - Detailed chart visualization
+## Features / routes
 
-## Implementation Notes
+- Splash, invite, birth details, chart creation, chat
+- Side panel: Chat, Kundali Chart, Family Members, Services, Subscription, Support
+- Responsive shell (mobile drawer / desktop rail)
 
-- All visual elements match the FigCraft design document exactly
-- Side panel opens within the application rectangle rather than overlaying browser
-- Element naming conventions are consistent with design specifications
-- Color scheme uses indigo/purple theme throughout
-- Proper animations and transitions for enhanced UX
-- Responsive layout for all screen sizes
+## Getting started
 
-## Getting Started
+```bash
+npm ci
+npm start          # http://localhost:3000
+CI=true npm test -- --watchAll=false
+CI=true npm run build
+```
 
-1. Clone this repository
-2. Navigate to the project directory
-3. Run `npm install` (if using create-react-app)
-4. Start the development server with `npm start`
+## Deploy
 
-The application will run on `http://localhost:3000`.
+Raspberry Pi self-hosted Actions → Docker/nginx on **:8082**. See [`DEPLOY.md`](./DEPLOY.md) and the tester checklist [`docs/BETA_SMOKE.md`](./docs/BETA_SMOKE.md).
 
-## Design Consistency
-
-This implementation ensures perfect visual fidelity with the original FigCraft design:
-- Exactly matching color palettes and gradients
-- Properly positioned elements throughout
-- All graphics and animations implemented as specified
-- Element names and class identifiers match documentation
+This repo is the `webapp/` child of [asmaurya/kundali-proj](https://github.com/asmaurya/kundali-proj).
