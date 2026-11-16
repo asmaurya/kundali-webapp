@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
+  getChart,
   loadActiveId,
   loadConversations,
   saveActiveId,
   saveConversations,
 } from './betaSession';
+import { askOracle } from './api';
 import { scriptedReplyFor } from './scriptedReplies';
 
 export const ASTROLOGERS = {
@@ -250,13 +252,15 @@ export function ChatProvider({ children }) {
       return id;
     };
 
-    const sendMessage = (text) => {
+    const sendMessage = async (text) => {
       const trimmed = (text || '').trim();
       if (!trimmed || !active) return;
-      const reply = scriptedReplyFor(trimmed);
+      const targetId = active.id;
+      const astrologer = ASTROLOGERS[active.astrologerId] || ASTROLOGERS['astro-chat'];
+
       setConversations((current) =>
         current.map((conversation) => {
-          if (conversation.id !== active.id) return conversation;
+          if (conversation.id !== targetId) return conversation;
           const isFirstUserMessage = !conversation.messages.some((m) => m.role === 'user');
           return {
             ...conversation,
@@ -267,11 +271,32 @@ export function ChatProvider({ children }) {
                   : trimmed
                 : conversation.title,
             updated: 'Just now',
-            messages: [
-              ...conversation.messages,
-              { role: 'user', text: trimmed },
-              { role: 'bot', text: reply },
-            ],
+            messages: [...conversation.messages, { role: 'user', text: trimmed }],
+          };
+        })
+      );
+
+      let replyText = scriptedReplyFor(trimmed);
+      if (astrologer.type === 'ai') {
+        try {
+          const result = await askOracle({
+            question: trimmed,
+            chart: getChart(),
+            history: active.messages,
+          });
+          replyText = result.text;
+        } catch {
+          // keep scriptedReplyFor
+        }
+      }
+
+      setConversations((current) =>
+        current.map((conversation) => {
+          if (conversation.id !== targetId) return conversation;
+          return {
+            ...conversation,
+            updated: 'Just now',
+            messages: [...conversation.messages, { role: 'bot', text: replyText }],
           };
         })
       );
