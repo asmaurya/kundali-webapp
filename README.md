@@ -29,8 +29,13 @@ CI=true npm test -- --watchAll=false
 CI=true npm run build
 ```
 
-## Deploy
+## Deploy / beta testing
 
-Raspberry Pi self-hosted Actions → Docker/nginx on **:8082**. See [`DEPLOY.md`](./DEPLOY.md) and the tester checklist [`docs/BETA_SMOKE.md`](./docs/BETA_SMOKE.md).
+**Primary beta host (Cloudflare Workers):** https://kundali-webapp.asmaurya-in.workers.dev  
+
+Tester checklist: [`docs/BETA_SMOKE.md`](./docs/BETA_SMOKE.md).  
+In-repo Worker assets config: [`wrangler.toml`](./wrangler.toml) (CRA `build/` as SPA).
+
+Workers Builds should run `CI=true npm run build` and publish the `build/` directory. Raspberry Pi Docker deploy ([`DEPLOY.md`](./DEPLOY.md)) is legacy and **not** used for beta testing.
 
 This repo is the `webapp/` child of [asmaurya/kundali-proj](https://github.com/asmaurya/kundali-proj).

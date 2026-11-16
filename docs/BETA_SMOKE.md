@@ -1,13 +1,17 @@
-# Beta smoke checklist (Pi :8082)
+# Beta smoke checklist (Cloudflare Workers)
 
-Run after each deploy to https://\<pi-host\>:8082 (or local `npm start`).
+**Beta URL:** https://kundali-webapp.asmaurya-in.workers.dev
+
+(Local: `npm start` at http://localhost:3000.)
 
 Default invite code: `KUNDALI-BETA` (or `REACT_APP_BETA_INVITE_CODE`).
+
+Raspberry Pi / `:8082` is **not** used for beta testing.
 
 ## First-run
 
 1. Open the app in a private window (empty storage).
-2. Confirm Splash shows **Get Started**.
+2. Confirm Splash shows **Get Started** (or redirect to Splash if you open `/chat` while logged out).
 3. Continue to invite; wrong code shows a calm message; correct code + email continues.
 4. Enter birth date, time, place → Creating chart → Chat with a greeting.
 

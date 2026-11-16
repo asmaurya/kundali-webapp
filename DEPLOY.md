@@ -1,6 +1,10 @@
-# Deploying Astro Chat to a Raspberry Pi
+# Deploying Astro Chat to a Raspberry Pi (legacy)
 
-The app is a static React build served by nginx in a container. It deploys from a
+> **Beta testing does not use the Pi.** Use the Cloudflare Workers URL  
+> https://kundali-webapp.asmaurya-in.workers.dev and `docs/BETA_SMOKE.md`.  
+> See also `wrangler.toml` and the README Deploy section.
+
+The app can still be served as a static React build by nginx in a container. It deploys from a
 **self-hosted GitHub Actions runner that lives on the Pi** — self-hosted minutes are
 free, the build is native arm64, and there is no image registry, no SSH hop and no
 extra network to configure.

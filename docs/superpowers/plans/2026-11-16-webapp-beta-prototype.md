@@ -2,9 +2,9 @@
 
 > **For agentic workers:** implement task-by-task. Checkboxes track progress.
 
-**Goal:** Ship an invite-only Astro Chat beta on the Pi (:8082) with local persistence and scripted answers. Native mobile stays on hold.
+**Goal:** Ship an invite-only Astro Chat beta on Cloudflare Workers with local persistence and scripted answers. Native mobile stays on hold.
 
-**Architecture:** React SPA. Beta session (invite code + email), birth details, chats and family members live in `localStorage`. No provider keys in the browser. Deploy via existing self-hosted Actions → Docker/nginx.
+**Architecture:** React SPA. Beta session (invite code + email), birth details, chats and family members live in `localStorage`. No provider keys in the browser. Beta host: https://kundali-webapp.asmaurya-in.workers.dev (Pi Docker deploy is ignored for testing).
 
 **Tech Stack:** React 18, MUI, React Router, CRA. Spec: `UI_SPEC.md`.
 
@@ -52,7 +52,7 @@ Recorded after `npm test` / `npm run build` green on `main` tip before beta work
 ### Task 4: Tests + smoke checklist — DONE
 
 - [x] RTL: invite gate, persistence, logout, first-run onboarding.
-- [x] `docs/BETA_SMOKE.md` checklist for Pi testers.
+- [x] `docs/BETA_SMOKE.md` checklist for Cloudflare Workers testers.
 - [x] README updated for beta reality (targets `UI_SPEC.md`; not “pixel-perfect everywhere”).
 
 ## Explicitly out of beta
@@ -61,4 +61,5 @@ Real OpenID, server broker, payments, live calls, ads, Flutter parity, mother-re
 
 ## Smoke / deploy
 
-See `docs/BETA_SMOKE.md`. Push `main` → Pi runner builds and serves `:8082`.
+See `docs/BETA_SMOKE.md`. Beta URL: https://kundali-webapp.asmaurya-in.workers.dev  
+(`wrangler.toml` documents the SPA assets layout for Workers Builds.)
