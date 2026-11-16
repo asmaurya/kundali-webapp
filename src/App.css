@@ -33,6 +33,14 @@
   overflow: hidden;
 }
 
+.app-shell--onboarding .app-main {
+  width: 100%;
+}
+
+.app-content--onboarding {
+  overflow: hidden auto;
+}
+
 /* Shared page frame so every screen has the same standard width. */
 .page {
   width: min(1080px, 100%);

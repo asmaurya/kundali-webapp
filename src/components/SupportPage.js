@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Alert,
   Box,
   Button,
   TextField,
@@ -13,35 +14,47 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SearchIcon from '@mui/icons-material/Search';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 
+const FEEDBACK_EMAIL = process.env.REACT_APP_FEEDBACK_EMAIL || 'asmaurya@gmail.com';
+
 const FAQS = [
   {
     question: 'How is my Kundali chart calculated?',
     answer:
-      'Your chart is calculated from the date, time and place of birth you provide, using Vedic planetary positions and the sidereal zodiac.',
+      'In this beta, the chart screen is a visual preview. Your birth details are stored on this device and will drive a real chart once the server is connected.',
   },
   {
     question: 'Can I chat with a live astrologer?',
     answer:
-      'Yes. Open Services, pick “Chat with a Live Astrologer” and choose an available astrologer from the conversation list.',
+      'Live booking is preview-only in beta. You can open sample threads with listed astrologers; real sessions arrive after launch.',
   },
   {
     question: 'How do I add my family members?',
     answer:
-      'Open Family Members, choose “Add Family Member”, pick the relation, add the birth details and the chart is created for that profile.',
+      'Open Family Members, choose “Add Family Member”, pick the relation, add the birth details and save. Profiles stay on this device for now.',
   },
   {
     question: 'How do I cancel my subscription?',
     answer:
-      'Go to Subscription, choose “Cancel subscription” and confirm. Your plan stays active until the end of the billing cycle.',
+      'There is no billing in the beta. Subscription screens are UI previews only.',
   },
   {
     question: 'Is my birth information private?',
     answer:
-      'Yes. Birth details are used only to calculate charts and are never shared with third parties.',
+      'Yes for this build: birth details and chats stay in your browser localStorage. Clearing site data or logging out removes them from this device.',
   },
 ];
 
-function SupportPage({ onBack }) {
+function SupportPage({ onBack, userEmail }) {
+  const [feedback, setFeedback] = useState('');
+
+  const mailtoHref = (() => {
+    const subject = encodeURIComponent('Astro Chat beta feedback');
+    const body = encodeURIComponent(
+      `From: ${userEmail || 'unknown'}\n\n${feedback.trim() || '(write your feedback here)'}\n`
+    );
+    return `mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${body}`;
+  })();
+
   return (
     <Box className="stack-page">
       <Box className="hill-deco" sx={{ opacity: 0.7 }} />
@@ -58,8 +71,12 @@ function SupportPage({ onBack }) {
           Support
         </Typography>
         <Typography sx={{ mt: 0.5, fontSize: 15, color: '#3A3550' }}>
-          Find quick answers or talk to the Astro Chat team.
+          Find quick answers or send beta feedback.
         </Typography>
+
+        <Alert severity="info" sx={{ mt: 2, bgcolor: '#EFE9F7', color: '#3A3550' }}>
+          Private beta: answers are scripted on-device. Tell us what feels wrong or missing.
+        </Alert>
 
         <TextField
           fullWidth
@@ -100,6 +117,39 @@ function SupportPage({ onBack }) {
 
         <Box
           sx={{
+            mt: 4,
+            p: 3,
+            bgcolor: '#FFFFFF',
+            border: '1px solid #E6DEEF',
+            borderRadius: 4,
+          }}
+        >
+          <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>Send feedback</Typography>
+          <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
+            Opens your email app with a draft to the beta inbox.
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            minRows={3}
+            value={feedback}
+            onChange={(event) => setFeedback(event.target.value)}
+            placeholder="What should we improve?"
+            aria-label="Feedback message"
+            sx={{ mt: 2, '& .MuiOutlinedInput-root': { bgcolor: '#FDFBFF', borderRadius: 2.5 } }}
+          />
+          <Button
+            component="a"
+            href={mailtoHref}
+            variant="contained"
+            sx={{ mt: 2, bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
+          >
+            Send feedback
+          </Button>
+        </Box>
+
+        <Box
+          sx={{
             display: 'flex',
             gap: 2,
             alignItems: 'center',
@@ -114,17 +164,16 @@ function SupportPage({ onBack }) {
           <Box>
             <Typography sx={{ fontWeight: 700 }}>Still need help?</Typography>
             <Typography sx={{ fontSize: 14, opacity: 0.9 }}>
-              Our team replies on WhatsApp and email within a few hours.
+              Email the beta inbox and we will reply when we can.
             </Typography>
           </Box>
           <Box sx={{ ml: 'auto', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button
+              component="a"
+              href={`mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('Astro Chat beta help')}`}
               variant="contained"
               sx={{ bgcolor: '#FFFFFF', color: '#5B3FA0', '&:hover': { bgcolor: '#F1ECF6' } }}
             >
-              Chat with us
-            </Button>
-            <Button variant="outlined" sx={{ color: '#FFFFFF', borderColor: '#FFFFFF' }}>
               Email
             </Button>
           </Box>

@@ -1,0 +1,10 @@
+# Cloudflare Workers static hosting for the CRA build (beta testing surface).
+# Dashboard Workers Builds should: install `npm ci`, build `CI=true npm run build`,
+# deploy assets from `./build` with SPA not-found handling.
+name = "kundali-webapp"
+compatibility_date = "2025-11-01"
+
+[assets]
+directory = "./build"
+not_found_handling = "single-page-application"
+html_handling = "auto-trailing-slash"

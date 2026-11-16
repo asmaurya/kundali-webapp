@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  loadActiveId,
+  loadConversations,
+  saveActiveId,
+  saveConversations,
+} from './betaSession';
+import { scriptedReplyFor } from './scriptedReplies';
 
 export const ASTROLOGERS = {
   'astro-chat': {
@@ -63,7 +70,7 @@ const nextId = () => {
   return `c${sequence}`;
 };
 
-const initialConversations = [
+const demoConversations = [
   {
     id: 'c1',
     astrologerId: 'astro-chat',
@@ -75,7 +82,7 @@ const initialConversations = [
       {
         role: 'bot',
         text:
-          'Your chart shows a transition phase in the 10th house. Saturn is aspecting your career house until late next year, which usually means slower but more durable progress. I can prepare a detailed insight, suggest remedies, or connect you with a live astrologer.',
+          'Your chart shows a transition phase in the 10th house. Saturn is aspecting your career house for a while longer, which usually means slower but more durable progress. I can prepare a detailed insight, suggest remedies, or connect you with a live astrologer.',
       },
     ],
   },
@@ -105,7 +112,7 @@ const initialConversations = [
       {
         role: 'bot',
         text:
-          'This week favours planning rather than launching. Mercury turns direct on Thursday, which should clear the delays you have felt since the start of the month. Keep financial decisions for the weekend.',
+          'This week favours planning rather than launching. Mercury turning direct should clear the delays you have felt recently. Keep financial decisions for the calmer days later in the week.',
       },
     ],
   },
@@ -124,7 +131,7 @@ const initialConversations = [
       {
         role: 'bot',
         text:
-          'For your chart, a Saturday practice is most suitable: sesame oil lamp at a Shani temple, and donating black gram. Avoid beginning major contracts on Saturdays until the transit ends.',
+          'For your chart, a Saturday practice is most suitable: a sesame oil lamp and donating black gram. Avoid beginning major contracts on Saturdays until the transit eases.',
       },
     ],
   },
@@ -143,7 +150,7 @@ const initialConversations = [
       {
         role: 'bot',
         text:
-          'The window after the next new moon is more supportive than the present one. Aim for offers between the 18th and the 27th; the 10th house lord is better placed then.',
+          'The window after the next new moon is more supportive than the present one. Aim for offers in the calmer part of the coming lunar cycle; the 10th house lord is better placed then.',
       },
     ],
   },
@@ -162,7 +169,7 @@ const initialConversations = [
       {
         role: 'bot',
         text:
-          'Your 7th lord is well placed, and the current sub-period supports a serious alliance within the next 12 to 16 months. Family introductions are more likely to succeed than self-initiated ones.',
+          'Your 7th lord is well placed, and the current sub-period supports a serious alliance within roughly the next year to year-and-a-half. Family introductions are more likely to succeed than self-initiated ones.',
       },
     ],
   },
@@ -187,14 +194,33 @@ const initialConversations = [
   },
 ];
 
-const REPLY =
-  'Thank you. I have noted this against your chart. Give me a moment to check the relevant houses and dashas, and I will follow up with a specific answer.';
+function initialState() {
+  const stored = loadConversations();
+  if (Array.isArray(stored) && stored.length > 0) {
+    const storedActive = loadActiveId();
+    const activeId =
+      storedActive && stored.some((item) => item.id === storedActive)
+        ? storedActive
+        : stored[0].id;
+    return { conversations: stored, activeId };
+  }
+  return { conversations: demoConversations, activeId: 'c1' };
+}
 
 const ChatContext = createContext(null);
 
 export function ChatProvider({ children }) {
-  const [conversations, setConversations] = useState(initialConversations);
-  const [activeId, setActiveId] = useState('c1');
+  const boot = initialState();
+  const [conversations, setConversations] = useState(boot.conversations);
+  const [activeId, setActiveId] = useState(boot.activeId);
+
+  useEffect(() => {
+    saveConversations(conversations);
+  }, [conversations]);
+
+  useEffect(() => {
+    saveActiveId(activeId);
+  }, [activeId]);
 
   const value = useMemo(() => {
     const active = conversations.find((item) => item.id === activeId) || conversations[0];
@@ -227,6 +253,7 @@ export function ChatProvider({ children }) {
     const sendMessage = (text) => {
       const trimmed = (text || '').trim();
       if (!trimmed || !active) return;
+      const reply = scriptedReplyFor(trimmed);
       setConversations((current) =>
         current.map((conversation) => {
           if (conversation.id !== active.id) return conversation;
@@ -243,11 +270,16 @@ export function ChatProvider({ children }) {
             messages: [
               ...conversation.messages,
               { role: 'user', text: trimmed },
-              { role: 'bot', text: REPLY },
+              { role: 'bot', text: reply },
             ],
           };
         })
       );
+    };
+
+    const resetToDemo = () => {
+      setConversations(demoConversations);
+      setActiveId('c1');
     };
 
     return {
@@ -257,6 +289,7 @@ export function ChatProvider({ children }) {
       openConversation,
       startChat,
       sendMessage,
+      resetToDemo,
       byAstrologer: (astrologerId) => conversations.filter((c) => c.astrologerId === astrologerId),
     };
   }, [conversations, activeId]);
