@@ -84,6 +84,7 @@ const CITY_COORDS = {
   ahmedabad: { lat: 23.0225, lon: 72.5714, tzOffsetHours: 5.5 },
   lucknow: { lat: 26.8467, lon: 80.9462, tzOffsetHours: 5.5 },
   chandigarh: { lat: 30.7333, lon: 76.7794, tzOffsetHours: 5.5 },
+  kanpur: { lat: 26.4499, lon: 80.3319, tzOffsetHours: 5.5 },
   india: { lat: 28.6139, lon: 77.209, tzOffsetHours: 5.5 },
 };
 
@@ -122,17 +123,88 @@ export function resolvePlace(place) {
       .includes(city)
   );
   if (matched) return { ...CITY_COORDS[matched], label: place };
-  // Default India (Delhi) when place is unknown — still produces a consistent chart.
   return { ...CITY_COORDS.delhi, label: place || 'Delhi, India', approx: true };
+}
+
+/** Parse HTML date/time values and common locale variants into a valid UTC Date. */
+export function parseBirthDateTime(dateInput, timeInput) {
+  const dateStr = String(dateInput || '').trim();
+  const rawTime = String(timeInput || '12:00').trim();
+
+  let year;
+  let month;
+  let day;
+  const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const slash = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (iso) {
+    year = Number(iso[1]);
+    month = Number(iso[2]);
+    day = Number(iso[3]);
+  } else if (slash) {
+    // Prefer DD/MM/YYYY for India; if first > 12 it's definitely day-first.
+    const a = Number(slash[1]);
+    const b = Number(slash[2]);
+    year = Number(slash[3]);
+    if (a > 12) {
+      day = a;
+      month = b;
+    } else if (b > 12) {
+      month = a;
+      day = b;
+    } else {
+      // Ambiguous — assume DD/MM/YYYY (India).
+      day = a;
+      month = b;
+    }
+  } else {
+    throw new Error('Enter date of birth as YYYY-MM-DD.');
+  }
+
+  let timeStr = rawTime.toLowerCase().replace(/\s+/g, '');
+  let hour;
+  let minute;
+  const ampm = timeStr.match(/^(\d{1,2}):(\d{2})(?::\d{2})?(am|pm)?$/);
+  if (!ampm) {
+    throw new Error('Enter time of birth as HH:MM.');
+  }
+  hour = Number(ampm[1]);
+  minute = Number(ampm[2]);
+  const meridiem = ampm[3];
+  if (meridiem === 'pm' && hour < 12) hour += 12;
+  if (meridiem === 'am' && hour === 12) hour = 0;
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    throw new Error('Birth date or time looks invalid.');
+  }
+
+  return { year, month, day, hour, minute };
 }
 
 export function birthToUtcDate({ date, time, place }) {
   const loc = resolvePlace(place);
-  const [year, month, day] = String(date).split('-').map(Number);
-  const [hh, mm] = String(time || '12:00').split(':').map(Number);
+  const parts = parseBirthDateTime(date, time);
   const utcMs =
-    Date.UTC(year, month - 1, day, hh || 0, mm || 0) - loc.tzOffsetHours * 3600 * 1000;
-  return { utc: new Date(utcMs), loc };
+    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute) -
+    loc.tzOffsetHours * 3600 * 1000;
+  const utc = new Date(utcMs);
+  if (Number.isNaN(utc.getTime())) {
+    throw new Error('Could not understand that birth date and time.');
+  }
+  return { utc, loc };
 }
 
 function tropicalLongitude(body, time) {
@@ -182,7 +254,6 @@ function vimshottariFromMoon(moonLon, birthDate) {
   const lordIndex = nakIndex % 9;
   const yearsRemaining = DASHA_YEARS[lordIndex] * (1 - portion);
   const start = new Date(birthDate.getTime());
-  // Balance dasha starts at birth; mahadasha started earlier
   const elapsedYears = DASHA_YEARS[lordIndex] - yearsRemaining;
   const mahadashaStart = new Date(
     start.getTime() - elapsedYears * 365.25 * 24 * 3600 * 1000
@@ -209,9 +280,12 @@ function vimshottariFromMoon(moonLon, birthDate) {
 
 /**
  * @param {{ date: string, time: string, place: string }} birth
- * @returns canonical-ish chart object for the web beta
  */
 export function generateChart(birth) {
+  if (!birth || !birth.date || !birth.time || !birth.place) {
+    throw new Error('Birth date, time and place are all required.');
+  }
+
   const { utc, loc } = birthToUtcDate(birth);
   const time = MakeTime(utc);
   const observer = new Observer(loc.lat, loc.lon, 0);

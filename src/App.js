@@ -159,12 +159,15 @@ function AppShell() {
     [navigate]
   );
 
-  const handleChartReady = useCallback(() => {
-    markOnboardingComplete();
-    setOnboarded(true);
-    startChat('astro-chat');
-    navigate('/chat', { replace: true });
-  }, [navigate, startChat]);
+  const handleChartReady = useCallback(
+    (_chart) => {
+      markOnboardingComplete();
+      setOnboarded(true);
+      startChat('astro-chat');
+      navigate('/chat', { replace: true });
+    },
+    [navigate, startChat]
+  );
 
   const handleNewChat = () => {
     startChat('astro-chat');

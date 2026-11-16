@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, Box, LinearProgress, Typography } from '@mui/material';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Box, Button, LinearProgress, Typography } from '@mui/material';
 import { createChart } from '../api';
 import { getBirthDetails, saveChart } from '../betaSession';
 
@@ -9,48 +9,63 @@ const STEPS = [
   'Saving your profile',
 ];
 
-function CreatingChartScreen({ onNext, onError }) {
-  const [progress, setProgress] = useState(10);
+const MIN_VISIBLE_MS = 1200;
+
+function CreatingChartScreen({ onNext }) {
+  const [progress, setProgress] = useState(8);
   const [error, setError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
+  const onNextRef = useRef(onNext);
+
+  useEffect(() => {
+    onNextRef.current = onNext;
+  }, [onNext]);
 
   useEffect(() => {
     let cancelled = false;
+    let progressTimer;
+    let finishTimer;
+    const startedAt = Date.now();
+
     const birth = getBirthDetails();
-    if (!birth) {
+    if (!birth?.date || !birth?.time || !birth?.place) {
       setError('Birth details are missing. Go back and enter them again.');
       return undefined;
     }
 
-    const timer = setInterval(() => {
-      setProgress((value) => (value >= 90 ? 90 : value + 10));
-    }, 280);
+    setError('');
+    setProgress(8);
+    progressTimer = setInterval(() => {
+      setProgress((value) => (value >= 90 ? 90 : value + 8));
+    }, 200);
 
     (async () => {
       try {
-        // Yield so the progress UI paints before heavy chart math.
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await new Promise((resolve) => setTimeout(resolve, 50));
         const chart = createChart(birth);
         if (cancelled) return;
+
         saveChart(chart);
         setProgress(100);
-        clearInterval(timer);
-        setTimeout(() => {
-          if (!cancelled) onNext(chart);
-        }, 400);
+        clearInterval(progressTimer);
+
+        const wait = Math.max(0, MIN_VISIBLE_MS - (Date.now() - startedAt));
+        finishTimer = setTimeout(() => {
+          if (!cancelled) onNextRef.current(chart);
+        }, wait);
       } catch (err) {
         if (cancelled) return;
-        clearInterval(timer);
-        const message = String(err.message || err);
-        setError(message);
-        if (onError) onError(message);
+        clearInterval(progressTimer);
+        setError(String(err.message || err || 'Could not prepare your chart.'));
       }
     })();
 
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearInterval(progressTimer);
+      clearTimeout(finishTimer);
     };
-  }, [onNext, onError]);
+  }, [retryToken]);
 
   return (
     <Box
@@ -90,9 +105,19 @@ function CreatingChartScreen({ onNext, onError }) {
       </Typography>
 
       {error ? (
-        <Alert severity="info" sx={{ position: 'relative', zIndex: 1, mt: 3, maxWidth: 480 }}>
-          {error}
-        </Alert>
+        <Box sx={{ position: 'relative', zIndex: 1, mt: 3, maxWidth: 480, width: '100%' }}>
+          <Alert severity="info" sx={{ textAlign: 'left' }}>
+            {error}
+          </Alert>
+          <Button
+            fullWidth
+            variant="contained"
+            onClick={() => setRetryToken((value) => value + 1)}
+            sx={{ mt: 2, bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
+          >
+            Try again
+          </Button>
+        </Box>
       ) : (
         <>
           <Box sx={{ position: 'relative', zIndex: 1, width: 'min(520px, 100%)', mt: 3 }}>

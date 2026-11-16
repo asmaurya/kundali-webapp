@@ -1,11 +1,16 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Button, Chip, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { getBirthDetails, getChart } from '../betaSession';
 
 function KundaliChartPage({ onBack }) {
-  const chart = useMemo(() => getChart(), []);
-  const birth = useMemo(() => getBirthDetails(), []);
+  const [chart, setChart] = useState(() => getChart());
+  const [birth, setBirth] = useState(() => getBirthDetails());
+
+  useEffect(() => {
+    setChart(getChart());
+    setBirth(getBirthDetails());
+  }, []);
 
   const houses = chart?.houses || [];
   const subtitle = chart
