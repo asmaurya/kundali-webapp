@@ -1,5 +1,10 @@
-import { chartContextForPrompt, generateChart } from './lib/chartEngine';
+import { chartContextForPrompt } from './lib/chartEngine';
 import { BETA_INVITE_CODE, buildAccountSnapshot } from './betaSession';
+import {
+  askWithPrivacy,
+  getChartProvider,
+  getUsageMeter,
+} from './providers';
 
 async function readJson(response) {
   const text = await response.text();
@@ -10,47 +15,68 @@ async function readJson(response) {
   }
 }
 
-/** Compute a real natal chart in the browser (no API key). */
+/**
+ * Compute a natal chart via the active ChartProvider.
+ * Local astronomy-engine is sync today; remote adapters may return a Promise.
+ * Callers that already `await` keep working either way.
+ */
 export function createChart(birthDetails) {
-  return generateChart(birthDetails);
+  const provider = getChartProvider();
+  const result = provider.computeNatal(birthDetails);
+  const meter = () => {
+    try {
+      getUsageMeter().recordChart({ provider: provider.id });
+    } catch {
+      /* metering must never block chart creation */
+    }
+  };
+  if (result && typeof result.then === 'function') {
+    return result.then((chart) => {
+      meter();
+      return chart;
+    });
+  }
+  meter();
+  return result;
 }
 
 /**
- * Ask the Worker for an answer grounded in the chart.
- * Falls back to a local chart-aware reply if /api/chat is unavailable.
+ * Ask the AnswerProvider with anonymisation + rolling context.
+ * Returns `{ text, provider, used_llm, usage, warning? }` for chatStore.
  */
-export async function askOracle({ question, chart, history = [], locale = 'en', extraContext = '' }) {
+export async function askOracle({
+  question,
+  chart,
+  history = [],
+  locale = 'en',
+  extraContext = '',
+  people = {},
+  modelTier = 'flash',
+}) {
   const chartContext = `${chartContextForPrompt(chart)}${extraContext || ''}`;
+  const result = await askWithPrivacy({
+    question,
+    chartContext,
+    messages: history,
+    locale,
+    people,
+    modelTier,
+  });
+
   try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        question,
-        chartContext,
-        locale,
-        history: history.map((m) => ({
-          role: m.role === 'bot' ? 'assistant' : 'user',
-          content: m.text,
-        })),
-      }),
+    getUsageMeter().recordLlm(result.usage || {}, {
+      provider: result.provider,
     });
-    if (!response.ok) {
-      const err = await readJson(response).catch(() => ({}));
-      throw new Error(err.error || `API ${response.status}`);
-    }
-    const data = await readJson(response);
-    if (!data.text) throw new Error('Empty reply');
-    return data;
-  } catch (error) {
-    const { scriptedReplyFor } = await import('./scriptedReplies');
-    return {
-      text: scriptedReplyFor(question),
-      provider: 'client-fallback',
-      used_llm: false,
-      warning: String(error.message || error),
-    };
+  } catch {
+    /* ignore */
   }
+
+  return {
+    text: result.answer,
+    provider: result.provider,
+    used_llm: result.provider !== 'local-heuristic',
+    usage: result.usage,
+  };
 }
 
 export async function health() {

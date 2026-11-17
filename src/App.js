@@ -20,6 +20,7 @@ import SettingsPage from './components/SettingsPage';
 import ReportsPage from './components/ReportsPage';
 import AstrologersPage from './components/AstrologersPage';
 import RemediesPage from './components/RemediesPage';
+import LowBalanceBanner from './components/LowBalanceBanner';
 import { ChatProvider, useChat } from './chatStore';
 import { LocaleProvider, useLocale } from './i18n/LocaleContext';
 import { fetchRemoteAccount, pushRemoteAccount } from './api';
@@ -270,6 +271,7 @@ function AppShell() {
             newChat={isChatPage ? handleNewChat : null}
           />
         )}
+        {showChrome && <LowBalanceBanner />}
         <Box
           component="main"
           className={`app-content${isChatPage ? ' app-content--flush' : ''}${

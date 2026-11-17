@@ -12,9 +12,10 @@ Targets the FigCraft extract in [`UI_SPEC.md`](./UI_SPEC.md). Not every screen i
 - **Chart:** real Lahiri / whole-sign natal chart in **North Indian diamond** layout, computed on-device (`astronomy-engine`).
 - **Language:** English / Hindi (Settings). Preference syncs across devices via `/api/settings` + `/api/account`.
 - **Place of birth:** autocomplete via Worker `/api/places/*` (Google Places when `GOOGLE_PLACES_API_KEY` is set; otherwise OpenStreetMap Nominatim). Selected place passes lat/lon/tz into the chart.
-- **Answers:** `/api/chat` on the Worker uses the chart context; optional `OPENAI_API_KEY` Worker secret for LLM replies (otherwise chart-aware local replies). No provider key in the browser.
+- **Answers:** `/api/chat` on the Worker uses anonymised chart context + rolling summary + last N turns; optional `OPENAI_API_KEY` Worker secret for LLM replies (otherwise chart-aware local replies). No provider key in the browser.
+- **Providers:** Chart / Answer / Billing adapters under `src/providers/` so Swiss Ephemeris, OpenAI/Claude, and Razorpay can slot in without rewriting screens. See [`docs/PROVIDERS.md`](./docs/PROVIDERS.md).
 - **Persistence:** birth details, chart, chats, family and settings survive refresh; account snapshot syncs to the Worker for cross-device recall.
-- **Subscription:** UI preview only — no billing.
+- **Subscription:** local usage meter + low-balance banner are live; payment gateway is a stub until Phase C (no real charges).
 - **Feedback:** Support → Send feedback (`REACT_APP_FEEDBACK_EMAIL`, default owner inbox).
 
 ## Features / routes

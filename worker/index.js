@@ -76,7 +76,7 @@ function chartAwareFallback(question, chartContext, locale) {
   return `Noted against your chart (${lagna} lagna; Moon ${moon}; ${dasha}). Ask about career, relationships, health, or remedies for a more focused reading grounded in these placements.`;
 }
 
-async function openAiReply(env, question, chartContext, history, locale) {
+async function openAiReply(env, question, chartContext, history, locale, summary = '') {
   const key = env.OPENAI_API_KEY;
   if (!key) return null;
 
@@ -85,10 +85,14 @@ async function openAiReply(env, question, chartContext, history, locale) {
       ? 'Reply in clear Hindi (Devanagari). Keep Jyotish terms (lagna, dasha, nakshatra) as commonly used.'
       : 'Reply in clear English.';
 
+  const summaryBlock = summary
+    ? `\n\nRolling conversation summary (stateless context; trust this over raw history when they disagree):\n${summary}`
+    : '';
+
   const messages = [
     {
       role: 'system',
-      content: `${TONE}\n${langLine}\n\nNatal chart context:\n${chartContext}`,
+      content: `${TONE}\n${langLine}\n\nNatal chart context (anonymised):\n${chartContext}${summaryBlock}`,
     },
     ...(Array.isArray(history) ? history.slice(-8) : []),
     { role: 'user', content: question },
@@ -186,9 +190,20 @@ async function handleChat(request, env) {
   }
 
   const chartContext = body.chartContext || 'No chart provided.';
+  const summary = String(body.summary || '').slice(0, 1200);
+  // Prefer client-assembled history (already windowed + anonymised); fall back to raw.
+  const history = Array.isArray(body.history) ? body.history : [];
   try {
-    const llm = await openAiReply(env, question, chartContext, body.history, locale);
-    if (llm) return json(llm);
+    const llm = await openAiReply(env, question, chartContext, history, locale, summary);
+    if (llm) {
+      return json({
+        ...llm,
+        usage: {
+          modelTier: body.modelTier || 'flash',
+          anonymousId: body.anonymousId || '',
+        },
+      });
+    }
   } catch (error) {
     return json({
       text: chartAwareFallback(question, chartContext, locale),
@@ -202,6 +217,10 @@ async function handleChat(request, env) {
     text: chartAwareFallback(question, chartContext, locale),
     provider: 'chart-local',
     used_llm: false,
+    usage: {
+      modelTier: body.modelTier || 'flash',
+      anonymousId: body.anonymousId || '',
+    },
   });
 }
 

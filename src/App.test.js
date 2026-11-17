@@ -43,6 +43,11 @@ beforeEach(() => {
       chartReady: true,
     },
   ]);
+  try {
+    require('./providers').getUsageMeter().resetDemo();
+  } catch {
+    /* ignore */
+  }
   global.fetch = jest.fn(async (input, init) => {
     const url = String(input);
     if (url.includes('/api/chat')) {

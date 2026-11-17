@@ -10,12 +10,21 @@ import {
 import { askOracle } from './api';
 import { scriptedReplyFor } from './scriptedReplies';
 import { chartContextForPrompt } from './lib/chartEngine';
-import { listProfiles } from './lib/profiles';
+import { getSelfProfile, listProfiles } from './lib/profiles';
 import {
   markAstrologerUsed,
   maybeCaptureRemedyFromReply,
   maybeCaptureReportFromChat,
 } from './lib/libraryStore';
+
+/** People map for anonymiser (names → relationship labels). */
+function peopleForAnonymize() {
+  const self = getSelfProfile();
+  const family = listProfiles()
+    .filter((p) => !p.isSelf)
+    .map((p) => ({ name: p.name, relation: p.relation }));
+  return { selfName: self?.name || '', family };
+}
 
 function familyContextFromQuestion(question) {
   const profiles = listProfiles().filter((p) => !p.isSelf && p.chart);
@@ -25,6 +34,7 @@ function familyContextFromQuestion(question) {
     return q.includes(String(p.name).toLowerCase()) || q.includes(`@${String(p.name).toLowerCase()}`);
   });
   if (!mentioned.length) return '';
+  // Relationship label in the outbound context; names stripped again by anonymiser.
   return mentioned
     .map((p) => `\nFamily chart — ${p.name} (${p.relation}):\n${chartContextForPrompt(p.chart)}`)
     .join('\n');
@@ -315,6 +325,7 @@ export function ChatProvider({ children }) {
             history: active.messages,
             locale,
             extraContext: extra,
+            people: peopleForAnonymize(),
           });
           replyText = result.text;
         } catch {
