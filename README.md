@@ -42,11 +42,27 @@ In-repo Worker assets config: [`wrangler.toml`](./wrangler.toml) (CRA `build/` a
 
 Workers Builds should run `CI=true npm run build` and publish via `wrangler.toml` (Worker + `build/` assets). Optional Cloudflare secrets:
 
-| Secret | Purpose |
-|--------|---------|
-| `OPENAI_API_KEY` / `OPENAI_MODEL` | Live LLM answers (default model `gpt-4o-mini`) |
+| Secret / var | Purpose |
+|--------------|---------|
+| `NVIDIA_API_KEY` or `OPENAI_API_KEY` | Live LLM answers (**Worker secret only** — never in the browser / CRA `.env`) |
+| `OPENAI_BASE_URL` | OpenAI-compatible base (default `https://api.openai.com/v1`; NVIDIA NIM: `https://integrate.api.nvidia.com/v1`) |
+| `OPENAI_MODEL` | Model id (OpenAI default `gpt-4o-mini`; NIM e.g. `meta/llama-3.1-70b-instruct`) |
 | `GOOGLE_PLACES_API_KEY` | Google Places Autocomplete + Place Details + Time Zone |
 | `BETA_INVITE_CODE` | Server-side invite check for sync/Places routes |
+
+**NVIDIA NIM:** in the Cloudflare dashboard → Workers → `kundali-webapp` → Settings → Variables and Secrets, add:
+
+1. Secret `NVIDIA_API_KEY` = your NVIDIA key  
+2. Var `OPENAI_BASE_URL` = `https://integrate.api.nvidia.com/v1`  
+3. Var `OPENAI_MODEL` = the model id from the NIM playground  
+
+Or via CLI from `webapp/`:
+
+```bash
+npx wrangler secret put NVIDIA_API_KEY
+npx wrangler secret put OPENAI_BASE_URL   # paste https://integrate.api.nvidia.com/v1
+npx wrangler secret put OPENAI_MODEL      # paste your NIM model id
+```
 
 Optional KV namespace bound as `SETTINGS` makes account sync durable across colos; without it the Worker uses the Cache API best-effort store.
 

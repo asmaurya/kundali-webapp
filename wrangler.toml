@@ -1,6 +1,9 @@
 # Cloudflare Worker + SPA assets. Workers Builds: npm ci && CI=true npm run build
-# Optional secrets:
-#   OPENAI_API_KEY / OPENAI_MODEL — live LLM answers
+# Optional secrets / vars (Cloudflare dashboard or `wrangler secret put`):
+#   NVIDIA_API_KEY or OPENAI_API_KEY — live LLM answers (Worker only; never in CRA .env)
+#   OPENAI_BASE_URL — default https://api.openai.com/v1
+#                      NVIDIA NIM: https://integrate.api.nvidia.com/v1
+#   OPENAI_MODEL — OpenAI default gpt-4o-mini; for NIM set e.g. meta/llama-3.1-70b-instruct
 #   GOOGLE_PLACES_API_KEY — Google Places + Time Zone (Nominatim fallback if unset)
 #   BETA_INVITE_CODE — override invite code server-side
 # Optional KV binding SETTINGS — durable cross-device account sync (Cache API used otherwise)

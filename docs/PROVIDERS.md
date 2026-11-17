@@ -52,4 +52,6 @@ Aligned with mother-repo `docs/ARCHITECTURE.md` Phase B (providers) → Phase C 
 |----------|--------|
 | `REACT_APP_CHART_API_URL` | Prefer remote ChartProvider |
 | `REACT_APP_API_BASE` | Prefix for Worker AnswerProvider (usually empty — same origin) |
-| Worker `OPENAI_API_KEY` | Real LLM behind `/api/chat` |
+| Worker `NVIDIA_API_KEY` or `OPENAI_API_KEY` | Real LLM behind `/api/chat` (never in the browser) |
+| Worker `OPENAI_BASE_URL` | OpenAI-compatible host; NVIDIA NIM → `https://integrate.api.nvidia.com/v1` |
+| Worker `OPENAI_MODEL` | Model id for that host |

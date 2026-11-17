@@ -76,9 +76,32 @@ function chartAwareFallback(question, chartContext, locale) {
   return `Noted against your chart (${lagna} lagna; Moon ${moon}; ${dasha}). Ask about career, relationships, health, or remedies for a more focused reading grounded in these placements.`;
 }
 
-async function openAiReply(env, question, chartContext, history, locale, summary = '') {
-  const key = env.OPENAI_API_KEY;
+/**
+ * OpenAI-compatible chat (OpenAI, NVIDIA NIM, etc.).
+ * Secrets / vars on the Worker only — never in the CRA browser bundle:
+ *   OPENAI_API_KEY or NVIDIA_API_KEY
+ *   OPENAI_BASE_URL  (default OpenAI; NVIDIA: https://integrate.api.nvidia.com/v1)
+ *   OPENAI_MODEL     (OpenAI default gpt-4o-mini; set to your NIM model id)
+ */
+function llmConfig(env) {
+  const key = env.OPENAI_API_KEY || env.NVIDIA_API_KEY || '';
   if (!key) return null;
+  const baseUrl = String(env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const isNvidia = /nvidia\.com/i.test(baseUrl) || Boolean(env.NVIDIA_API_KEY && !env.OPENAI_API_KEY);
+  const model =
+    env.OPENAI_MODEL ||
+    (isNvidia ? 'meta/llama-3.1-70b-instruct' : 'gpt-4o-mini');
+  return {
+    key,
+    baseUrl,
+    model,
+    provider: isNvidia ? 'nvidia' : 'openai',
+  };
+}
+
+async function openAiReply(env, question, chartContext, history, locale, summary = '') {
+  const cfg = llmConfig(env);
+  if (!cfg) return null;
 
   const langLine =
     locale === 'hi'
@@ -98,14 +121,14 @@ async function openAiReply(env, question, chartContext, history, locale, summary
     { role: 'user', content: question },
   ];
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${key}`,
+      authorization: `Bearer ${cfg.key}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: env.OPENAI_MODEL || 'gpt-4o-mini',
+      model: cfg.model,
       temperature: 0.4,
       max_tokens: 280,
       messages,
@@ -114,12 +137,12 @@ async function openAiReply(env, question, chartContext, history, locale, summary
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`OpenAI ${response.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`LLM ${response.status}: ${detail.slice(0, 200)}`);
   }
   const payload = await response.json();
   const text = payload.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error('Empty OpenAI response');
-  return { text, provider: 'openai', used_llm: true };
+  if (!text) throw new Error('Empty LLM response');
+  return { text, provider: cfg.provider, used_llm: true };
 }
 
 function expectedInvite(env) {
@@ -461,7 +484,8 @@ export default {
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
-        llm: Boolean(env.OPENAI_API_KEY),
+        llm: Boolean(env.OPENAI_API_KEY || env.NVIDIA_API_KEY),
+        llmProvider: llmConfig(env)?.provider || null,
         places: Boolean(env.GOOGLE_PLACES_API_KEY),
         settingsStore: Boolean(env.SETTINGS),
         service: 'kundali-webapp',
