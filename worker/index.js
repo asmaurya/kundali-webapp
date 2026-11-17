@@ -133,7 +133,10 @@ async function openAiReply(env, question, chartContext, history, locale, summary
       content: `${TONE}\n${langLine}\n\nNatal chart context:\n${chartContext}${summaryBlock}`,
     },
     ...normalizeChatHistory(history),
-    { role: 'user', content: question },
+    {
+      role: 'user',
+      content: `${question}\n\n(Reply with the final answer only — one short reading, no planning.)`,
+    },
   ];
 
   // muse-glimmer is a reasoning model: low temp + tiny max_tokens often yields empty
@@ -191,23 +194,32 @@ async function openAiReply(env, question, chartContext, history, locale, summary
 function finalizeAssistantText(raw) {
   let text = String(raw || '').trim();
   if (!text) return '';
-  if (/^the user wants\b/i.test(text) || /\bconstraints to (?:follow|check)\b/i.test(text)) {
-    const parts = text
-      .split(/\n\s*\n/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-    const answerLike = [...parts]
-      .reverse()
-      .find(
-        (p) =>
-          !/^the user wants\b/i.test(p) &&
-          !/\bconstraints to (?:follow|check)\b/i.test(p) &&
-          !/\bi (?:should|need to)\b/i.test(p) &&
-          p.length < 600
-      );
-    if (answerLike) text = answerLike;
-  }
-  return text.trim();
+  const leaked =
+    /^the user wants\b/i.test(text) ||
+    /\bconstraints to (?:follow|check)\b/i.test(text) ||
+    /\bi (?:should|need to) keep it\b/i.test(text);
+  if (!leaked) return text;
+
+  const quoted = [...text.matchAll(/"([^"\n]{20,400})"/g)].map((m) => m[1].trim());
+  if (quoted.length) return quoted[quoted.length - 1];
+
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 40 && /lagna|moon|dasha|house|chart|mesha|career|initiative/i.test(s));
+  if (sentences.length) return sentences[sentences.length - 1];
+
+  const parts = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(
+      (p) =>
+        p.length >= 40 &&
+        !/^the user wants\b/i.test(p) &&
+        !/\bconstraints to (?:follow|check)\b/i.test(p) &&
+        !/\bi (?:should|need to)\b/i.test(p)
+    );
+  return (parts[parts.length - 1] || text).trim();
 }
 
 function extractMessageText(message) {
