@@ -489,6 +489,7 @@ export default {
         places: Boolean(env.GOOGLE_PLACES_API_KEY),
         settingsStore: Boolean(env.SETTINGS),
         service: 'kundali-webapp',
+        build: env.WORKER_BUILD || null,
       });
     }
 

@@ -11,6 +11,12 @@ name = "kundali-webapp"
 main = "worker/index.js"
 compatibility_date = "2025-11-01"
 
+# Non-secret LLM routing (NVIDIA NIM). API key stays a Worker secret.
+[vars]
+OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
+OPENAI_MODEL = "meta/muse-glimmer-30b"
+WORKER_BUILD = "provider-abstractions-nvidia"
+
 [assets]
 directory = "./build"
 binding = "ASSETS"
