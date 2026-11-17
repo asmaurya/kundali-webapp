@@ -23,6 +23,7 @@ import {
   getFamilyOnly,
   getSelfProfile,
   persistFamilyMembers,
+  withChartStatus,
 } from '../lib/profiles';
 import { loadFamilyMembers } from '../betaSession';
 
@@ -80,36 +81,81 @@ const EMPTY_FORM = {
 const primaryButton = { bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } };
 const textButton = { color: '#5B3FA0' };
 
+function buildBirthFromForm(form, placeMeta) {
+  const birth = { ...form };
+  if (placeMeta && Number.isFinite(Number(placeMeta.lat)) && Number.isFinite(Number(placeMeta.lon))) {
+    birth.lat = Number(placeMeta.lat);
+    birth.lon = Number(placeMeta.lon);
+    birth.tzOffsetHours = placeMeta.tzOffsetHours;
+    birth.countryCode = placeMeta.countryCode;
+    birth.placeId = placeMeta.placeId;
+    birth.source = placeMeta.source;
+    birth.place = placeMeta.label || form.place;
+  }
+  return birth;
+}
+
 function FamilyListPage() {
   const [members, setMembers] = useState(() => {
     const stored = loadFamilyMembers(null);
     const family = Array.isArray(stored)
-      ? getFamilyOnly()
-      : getFamilyOnly(INITIAL_MEMBERS).map((m) => ensureMemberChart(m));
+      ? getFamilyOnly().map(withChartStatus)
+      : getFamilyOnly(INITIAL_MEMBERS).map(withChartStatus);
     if (!Array.isArray(stored)) {
       persistFamilyMembers(family);
     }
-    return [getSelfProfile(), ...family.map((m) => ensureMemberChart(m))];
+    return [getSelfProfile(), ...family];
   });
 
   useEffect(() => {
     persistFamilyMembers(members.filter((m) => !m.isSelf));
   }, [members]);
 
+  // Backfill charts for members that have birth details but no valid chart yet.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const pending = members.filter((m) => !m.isSelf && !m.chartReady && m.date && m.time && m.place);
+      if (!pending.length) return;
+      const updates = {};
+      await Promise.all(
+        pending.map(async (member) => {
+          const prepared = await ensureMemberChart(member);
+          updates[member.id] = prepared;
+        })
+      );
+      if (cancelled) return;
+      setMembers((current) =>
+        current.map((m) => (updates[m.id] ? updates[m.id] : m))
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Only on mount — avoid loops when members update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(EMPTY_FORM);
   const [placeMeta, setPlaceMeta] = useState(null);
+  const [preparedMember, setPreparedMember] = useState(null);
+  const [chartPhase, setChartPhase] = useState('idle'); // idle | preparing | ready | error
+  const [chartError, setChartError] = useState('');
 
   const refresh = (familyOnly) => {
-    setMembers([getSelfProfile(), ...familyOnly.map((m) => ensureMemberChart(m))]);
+    setMembers([getSelfProfile(), ...familyOnly.map(withChartStatus)]);
   };
 
   const openWizard = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
     setPlaceMeta(null);
+    setPreparedMember(null);
+    setChartPhase('idle');
+    setChartError('');
     setStep(0);
     setWizardOpen(true);
   };
@@ -137,6 +183,9 @@ function FamilyListPage() {
           }
         : null
     );
+    setPreparedMember(null);
+    setChartPhase('idle');
+    setChartError('');
     setStep(0);
     setWizardOpen(true);
   };
@@ -145,22 +194,51 @@ function FamilyListPage() {
     setForm((current) => ({ ...current, [field]: event.target.value }));
   };
 
+  // When the Chart step opens, actually generate the chart (was previously stuck forever).
+  useEffect(() => {
+    if (!wizardOpen || step !== 2) return undefined;
+    let cancelled = false;
+    setChartPhase('preparing');
+    setChartError('');
+    setPreparedMember(null);
+
+    (async () => {
+      const birth = buildBirthFromForm(form, placeMeta);
+      try {
+        const withChart = await ensureMemberChart({
+          ...(editing || {}),
+          ...birth,
+          id: editing?.id || Date.now(),
+        });
+        if (cancelled) return;
+        setPreparedMember(withChart);
+        if (withChart.chartReady) {
+          setChartPhase('ready');
+        } else {
+          setChartPhase('error');
+          setChartError('Could not prepare this chart. Check birth details and try again.');
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setChartPhase('error');
+        setChartError(String(error?.message || error || 'Chart generation failed.'));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wizardOpen, step, form, placeMeta, editing]);
+
   const saveMember = () => {
-    const birth = { ...form };
-    if (placeMeta && Number.isFinite(Number(placeMeta.lat)) && Number.isFinite(Number(placeMeta.lon))) {
-      birth.lat = Number(placeMeta.lat);
-      birth.lon = Number(placeMeta.lon);
-      birth.tzOffsetHours = placeMeta.tzOffsetHours;
-      birth.countryCode = placeMeta.countryCode;
-      birth.placeId = placeMeta.placeId;
-      birth.source = placeMeta.source;
-      birth.place = placeMeta.label || form.place;
-    }
-    const withChart = ensureMemberChart({
-      ...(editing || {}),
-      ...birth,
-      id: editing?.id || Date.now(),
-    });
+    const birth = buildBirthFromForm(form, placeMeta);
+    const withChart =
+      preparedMember ||
+      withChartStatus({
+        ...(editing || {}),
+        ...birth,
+        id: editing?.id || Date.now(),
+      });
     const family = members.filter((m) => !m.isSelf);
     const nextFamily = editing
       ? family.map((member) => (member.id === editing.id ? withChart : member))
@@ -169,9 +247,9 @@ function FamilyListPage() {
     setWizardOpen(false);
   };
 
-  const prepareChart = (member) => {
+  const prepareChart = async (member) => {
     if (member.isSelf) return;
-    const prepared = ensureMemberChart(member);
+    const prepared = await ensureMemberChart(member);
     const nextFamily = members
       .filter((m) => !m.isSelf)
       .map((item) => (item.id === member.id ? prepared : item));
@@ -271,8 +349,13 @@ function FamilyListPage() {
               </Button>
             )}
             {step === 2 && (
-              <Button variant="contained" onClick={saveMember} sx={primaryButton}>
-                Save member
+              <Button
+                variant="contained"
+                onClick={saveMember}
+                disabled={chartPhase === 'preparing'}
+                sx={primaryButton}
+              >
+                {chartPhase === 'ready' ? 'Save member' : chartPhase === 'error' ? 'Save without chart' : 'Working…'}
               </Button>
             )}
           </>
@@ -367,17 +450,39 @@ function FamilyListPage() {
 
         {step === 2 && (
           <Box>
-            <Typography sx={{ mb: 2, color: '#3A3550' }}>
-              Preparing the Kundali chart for {form.name} ({form.relation})…
-            </Typography>
-            <LinearProgress
-              sx={{
-                height: 8,
-                borderRadius: 4,
-                bgcolor: '#CFC4EA',
-                '& .MuiLinearProgress-bar': { bgcolor: '#6B4FA0', borderRadius: 4 },
-              }}
-            />
+            {chartPhase === 'preparing' && (
+              <>
+                <Typography sx={{ mb: 2, color: '#3A3550' }}>
+                  Preparing the Kundali chart for {form.name} ({form.relation})…
+                </Typography>
+                <LinearProgress
+                  sx={{
+                    height: 8,
+                    borderRadius: 4,
+                    bgcolor: '#CFC4EA',
+                    '& .MuiLinearProgress-bar': { bgcolor: '#6B4FA0', borderRadius: 4 },
+                  }}
+                />
+              </>
+            )}
+            {chartPhase === 'ready' && (
+              <Alert severity="success" sx={{ bgcolor: '#D9F0DC', color: '#1E7A36' }}>
+                Chart ready for {form.name}
+                {preparedMember?.chart?.summary?.lagna
+                  ? ` · Lagna ${preparedMember.chart.summary.lagna}`
+                  : ''}
+                {preparedMember?.chart?.provenance?.provider
+                  ? ` · ${preparedMember.chart.provenance.provider}`
+                  : ''}
+                . Save to add them to your family list.
+              </Alert>
+            )}
+            {chartPhase === 'error' && (
+              <Alert severity="warning">
+                {chartError || 'Chart could not be prepared.'} You can still save the member and
+                retry later.
+              </Alert>
+            )}
           </Box>
         )}
       </AppModal>

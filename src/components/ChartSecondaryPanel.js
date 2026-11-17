@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { buildSecondaryViews } from '../lib/chartViews';
+import { planetGlyph, planetLabel } from '../lib/grahaMeta';
 import NorthIndianChart from './NorthIndianChart';
 
 function StrengthRows({ rows }) {
@@ -74,9 +75,66 @@ function TableView({ rows, columns }) {
   );
 }
 
+async function fetchSwissGochara(view) {
+  const response = await fetch('/api/gochara', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      lat: view.lat,
+      lon: view.lon,
+      tzOffsetHours: view.tzOffsetHours,
+      lagnaRashi: view.lagnaRashi,
+      at: new Date().toISOString(),
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(detail.slice(0, 120) || `Gochara ${response.status}`);
+  }
+  return response.json();
+}
+
 function ChartSecondaryPanel({ chart, lang = 'en', labelMode = 'planet' }) {
-  const views = useMemo(() => buildSecondaryViews(chart), [chart]);
+  const views = useMemo(() => buildSecondaryViews(chart, lang), [chart, lang]);
   const [expanded, setExpanded] = useState(false);
+  const [gocharaRows, setGocharaRows] = useState(null);
+  const [gocharaError, setGocharaError] = useState('');
+  const [gocharaLoading, setGocharaLoading] = useState(false);
+
+  useEffect(() => {
+    setGocharaRows(null);
+    setGocharaError('');
+  }, [chart]);
+
+  useEffect(() => {
+    if (expanded !== 'gochara' || gocharaRows || gocharaLoading) return undefined;
+    const view = views.find((v) => v.id === 'gochara');
+    if (!view?.needsSwissGochara) return undefined;
+    let cancelled = false;
+    setGocharaLoading(true);
+    fetchSwissGochara(view)
+      .then((data) => {
+        if (cancelled) return;
+        const natal = view.natalByPlanet || {};
+        setGocharaRows(
+          (data.rows || []).map((row) => ({
+            ...row,
+            planetLabel: planetLabel(row.planet, lang),
+            natalSign: natal[row.planet] || '—',
+          }))
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setGocharaError(String(error.message || error));
+      })
+      .finally(() => {
+        if (!cancelled) setGocharaLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, gocharaRows, gocharaLoading, views, lang]);
 
   if (!chart || views.length === 0) return null;
 
@@ -112,7 +170,7 @@ function ChartSecondaryPanel({ chart, lang = 'en', labelMode = 'planet' }) {
           </AccordionSummary>
           <AccordionDetails sx={{ px: 2, pb: 2 }}>
             {view.kind === 'kundali' && (
-              <Box sx={{ maxWidth: 320 }}>
+              <Box sx={{ maxWidth: 360 }}>
                 <NorthIndianChart
                   houses={view.houses}
                   grahas={view.grahas || chart.grahas || []}
@@ -127,30 +185,52 @@ function ChartSecondaryPanel({ chart, lang = 'en', labelMode = 'planet' }) {
               <TableView
                 rows={view.rows}
                 columns={[
-                  { key: 'planet', label: 'Graha' },
-                  { key: 'sign', label: 'Rashi' },
-                  { key: 'degree', label: 'Deg' },
-                  { key: 'house', label: 'Bhava' },
-                  { key: 'nakshatra', label: 'Nakshatra' },
                   {
-                    key: 'retrograde',
-                    label: 'R',
-                    render: (row) => (row.retrograde ? 'R' : '—'),
+                    key: 'planet',
+                    label: lang === 'hi' ? 'ग्रह' : 'Graha',
+                    render: (row) => (
+                      <span>
+                        <span style={{ marginRight: 6 }}>{planetGlyph(row.glyph || row.planet)}</span>
+                        {row.planet}
+                      </span>
+                    ),
                   },
+                  { key: 'sign', label: lang === 'hi' ? 'राशि' : 'Rashi' },
+                  { key: 'degree', label: lang === 'hi' ? 'अंश' : 'Degree' },
+                  { key: 'house', label: lang === 'hi' ? 'भाव' : 'Bhava' },
+                  { key: 'nakshatra', label: lang === 'hi' ? 'नक्षत्र' : 'Nakshatra' },
+                  { key: 'marks', label: lang === 'hi' ? 'संकेत' : 'Flags' },
                 ]}
               />
             )}
             {view.kind === 'table' && view.id === 'gochara' && (
-              <TableView
-                rows={view.rows}
-                columns={[
-                  { key: 'planet', label: 'Graha' },
-                  { key: 'sign', label: 'Transit' },
-                  { key: 'degree', label: 'Deg' },
-                  { key: 'house', label: 'From lagna' },
-                  { key: 'natalSign', label: 'Natal' },
-                ]}
-              />
+              <>
+                {gocharaLoading && <LinearProgress sx={{ mb: 1 }} />}
+                {gocharaError && (
+                  <Typography sx={{ color: '#8A4A4A', fontSize: 13 }}>{gocharaError}</Typography>
+                )}
+                {gocharaRows && (
+                  <TableView
+                    rows={gocharaRows}
+                    columns={[
+                      {
+                        key: 'planet',
+                        label: lang === 'hi' ? 'ग्रह' : 'Graha',
+                        render: (row) => (
+                          <span>
+                            <span style={{ marginRight: 6 }}>{planetGlyph(row.planet)}</span>
+                            {row.planetLabel || planetLabel(row.planet, lang)}
+                          </span>
+                        ),
+                      },
+                      { key: 'sign', label: lang === 'hi' ? 'गोचर' : 'Transit' },
+                      { key: 'degree', label: lang === 'hi' ? 'अंश' : 'Deg' },
+                      { key: 'house', label: lang === 'hi' ? 'लग्न से' : 'From lagna' },
+                      { key: 'natalSign', label: lang === 'hi' ? 'जन्म' : 'Natal' },
+                    ]}
+                  />
+                )}
+              </>
             )}
             {view.kind === 'strength' && <StrengthRows rows={view.rows} />}
           </AccordionDetails>
