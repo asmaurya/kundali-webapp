@@ -4,7 +4,7 @@
  * syncs beta account settings across devices, and proxies place search.
  */
 
-const TONE = `Be accurate and neutral. State only what the chart supports. Do not add reassurance or positivity the chart does not support. Do not give exact dates, amounts, scores or exact outcomes; give periods and tendencies. Do not discuss death, lifespan, pregnancy, medical or psychological diagnoses. Do not promise outcomes. Religion-neutral: no deities or temple prescriptions; practical habits are fine. Keep answers under 120 words.`;
+const TONE = `Be accurate and neutral. State only what the chart supports. Do not add reassurance or positivity the chart does not support. Do not give exact dates, amounts, scores or exact outcomes; give periods and tendencies. Do not discuss death, lifespan, pregnancy, medical or psychological diagnoses. Do not promise outcomes. Religion-neutral: no deities or temple prescriptions; practical habits are fine. Keep answers under 120 words. Output ONLY the final user-facing answer — no planning, no rule checklists, no phrases like "The user wants" or "Constraints to follow".`;
 
 const DEFAULT_INVITE = 'KUNDALI-BETA';
 
@@ -177,7 +177,7 @@ async function openAiReply(env, question, chartContext, history, locale, summary
   }
 
   const message = payload.choices?.[0]?.message || {};
-  const text = extractMessageText(message);
+  const text = finalizeAssistantText(extractMessageText(message));
   if (!text) {
     const finish = payload.choices?.[0]?.finish_reason || 'unknown';
     throw new Error(
@@ -185,6 +185,29 @@ async function openAiReply(env, question, chartContext, history, locale, summary
     );
   }
   return { text, provider: cfg.provider, used_llm: true };
+}
+
+/** Drop leaked chain-of-thought / planning when the model puts it in content. */
+function finalizeAssistantText(raw) {
+  let text = String(raw || '').trim();
+  if (!text) return '';
+  if (/^the user wants\b/i.test(text) || /\bconstraints to (?:follow|check)\b/i.test(text)) {
+    const parts = text
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const answerLike = [...parts]
+      .reverse()
+      .find(
+        (p) =>
+          !/^the user wants\b/i.test(p) &&
+          !/\bconstraints to (?:follow|check)\b/i.test(p) &&
+          !/\bi (?:should|need to)\b/i.test(p) &&
+          p.length < 600
+      );
+    if (answerLike) text = answerLike;
+  }
+  return text.trim();
 }
 
 function extractMessageText(message) {
