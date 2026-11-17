@@ -1,7 +1,6 @@
 /**
- * Cloudflare Worker: SPA assets + chat + settings sync + Places proxy.
- * Chart math runs in the browser; the Worker answers with chart context,
- * syncs beta account settings across devices, and proxies place search.
+ * Cloudflare Worker: SPA assets + chat + settings sync + Places proxy +
+ * optional chart proxy to the Vercel Swiss Ephemeris service.
  */
 
 const TONE = `Be accurate and neutral. State only what the chart supports. Do not add reassurance or positivity the chart does not support. Do not give exact dates, amounts, scores or exact outcomes; give periods and tendencies. Do not discuss death, lifespan, pregnancy, medical or psychological diagnoses. Do not promise outcomes. Religion-neutral: no deities or temple prescriptions; practical habits are fine. Keep answers under 120 words. Output ONLY the final user-facing answer — no planning, no rule checklists, no phrases like "The user wants" or "Constraints to follow".`;
@@ -14,6 +13,88 @@ const DEFAULT_INVITE = 'KUNDALI-BETA';
 function masterPrompt(env) {
   const fromEnv = String(env.MASTER_PROMPT || '').trim();
   return fromEnv || DEFAULT_MASTER_PROMPT;
+}
+
+/**
+ * Vercel chart service config.
+ * - CHART_API_URL: https://….vercel.app
+ * - CHART_API_KEY: shared bearer (preferred)
+ * - VERCEL_CHART: if https → URL; else treated as bearer when CHART_API_KEY unset
+ */
+function chartRemoteConfig(env) {
+  const vercelChart = String(env.VERCEL_CHART || '').trim();
+  let baseUrl = String(env.CHART_API_URL || '').trim();
+  let apiKey = String(env.CHART_API_KEY || '').trim();
+  if (!baseUrl && /^https?:\/\//i.test(vercelChart)) {
+    baseUrl = vercelChart;
+  } else if (!apiKey && vercelChart && !/^https?:\/\//i.test(vercelChart)) {
+    apiKey = vercelChart;
+  }
+  return {
+    baseUrl: baseUrl.replace(/\/$/, ''),
+    apiKey,
+  };
+}
+
+async function handleChartProxy(request, env) {
+  const { baseUrl, apiKey } = chartRemoteConfig(env);
+  if (!baseUrl) {
+    return json(
+      {
+        error: 'chart_remote_unconfigured',
+        detail: 'Set CHART_API_URL to your Vercel chart deployment.',
+      },
+      503
+    );
+  }
+
+  let bodyText = '';
+  try {
+    bodyText = await request.text();
+  } catch {
+    return json({ error: 'invalid_body' }, 400);
+  }
+
+  const headers = { 'content-type': 'application/json' };
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+
+  try {
+    const upstream = await fetch(`${baseUrl}/v1/chart`, {
+      method: 'POST',
+      headers,
+      body: bodyText || '{}',
+    });
+    const text = await upstream.text();
+    return new Response(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': upstream.headers.get('content-type') || 'application/json',
+        'cache-control': 'no-store',
+        'access-control-allow-origin': '*',
+      },
+    });
+  } catch (error) {
+    return json(
+      {
+        error: 'chart_upstream_failed',
+        detail: String(error?.message || error).slice(0, 160),
+      },
+      502
+    );
+  }
+}
+
+async function probeChartRemote(env) {
+  const { baseUrl, apiKey } = chartRemoteConfig(env);
+  if (!baseUrl) return { ok: false, detail: 'unconfigured' };
+  try {
+    const headers = {};
+    if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+    const response = await fetch(`${baseUrl}/health`, { headers });
+    return { ok: response.ok, detail: response.ok ? 'swiss-ephemeris' : `status_${response.status}` };
+  } catch (error) {
+    return { ok: false, detail: String(error?.message || error).slice(0, 80) };
+  }
 }
 
 function json(data, status = 200) {
@@ -594,6 +675,7 @@ export default {
 
     if (url.pathname === '/api/health') {
       const cfg = llmConfig(env);
+      const chartRemote = await probeChartRemote(env);
       return json({
         ok: true,
         llm: Boolean(env.OPENAI_API_KEY || env.NVIDIA_API_KEY),
@@ -602,9 +684,16 @@ export default {
         masterPrompt: Boolean(String(env.MASTER_PROMPT || DEFAULT_MASTER_PROMPT).trim()),
         places: Boolean(env.GOOGLE_PLACES_API_KEY),
         settingsStore: Boolean(env.SETTINGS),
+        chartRemote: chartRemote.ok,
+        chartRemoteDetail: chartRemote.detail,
+        chartApiConfigured: Boolean(chartRemoteConfig(env).baseUrl),
         service: 'kundali-webapp',
         build: env.WORKER_BUILD || null,
       });
+    }
+
+    if (url.pathname === '/api/chart' && request.method === 'POST') {
+      return handleChartProxy(request, env);
     }
 
     if (url.pathname === '/api/chat' && request.method === 'POST') {

@@ -1,21 +1,22 @@
 import { CHART_PROVIDER_IDS } from './types';
 
 /**
- * Future Swiss Ephemeris / astrology-insights / Vedika chart API.
- * Enabled when REACT_APP_CHART_API_URL is set; otherwise unused.
- * Drop-in replacement — same canonical chart JSON out.
+ * Swiss Ephemeris / Vercel chart API (or Worker proxy).
+ * - Explicit REACT_APP_CHART_API_URL → call that host's /v1/chart
+ * - Empty baseUrl → same-origin Worker proxy POST /api/chart
  */
 export function createRemoteChartProvider({
   baseUrl = process.env.REACT_APP_CHART_API_URL || '',
   fetchImpl = fetch,
 } = {}) {
+  const root = String(baseUrl || '').replace(/\/$/, '');
+  const chartUrl = root ? `${root}/v1/chart` : '/api/chart';
+  const healthUrl = root ? `${root}/health` : '/api/health';
+
   return {
     id: CHART_PROVIDER_IDS.remoteApi,
     async computeNatal(birth) {
-      if (!baseUrl) {
-        throw new Error('Remote chart API URL is not configured.');
-      }
-      const response = await fetchImpl(`${String(baseUrl).replace(/\/$/, '')}/v1/chart`, {
+      const response = await fetchImpl(chartUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ birth }),
@@ -31,10 +32,22 @@ export function createRemoteChartProvider({
       return chart;
     },
     async health() {
-      if (!baseUrl) return { ok: false, detail: 'not configured' };
       try {
-        const response = await fetchImpl(`${String(baseUrl).replace(/\/$/, '')}/health`);
-        return { ok: response.ok, detail: 'remote' };
+        const response = await fetchImpl(healthUrl);
+        if (!response.ok) return { ok: false, detail: `status_${response.status}` };
+        const data = await response.json().catch(() => ({}));
+        if (root) {
+          return { ok: Boolean(data.ok), detail: data.provider || 'remote' };
+        }
+        if (data.chartRemote) {
+          return { ok: true, detail: data.chartRemoteDetail || 'worker-proxy' };
+        }
+        return {
+          ok: false,
+          detail: data.chartApiConfigured
+            ? data.chartRemoteDetail || 'down'
+            : 'unconfigured',
+        };
       } catch (error) {
         return { ok: false, detail: String(error.message || error) };
       }

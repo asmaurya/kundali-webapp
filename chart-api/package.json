@@ -1,0 +1,19 @@
+{
+  "name": "kundali-chart-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Swiss Ephemeris natal chart API for Kundali (Vercel serverless)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --watch scripts/local-server.js",
+    "start": "node scripts/local-server.js",
+    "test": "node --test test/*.test.js",
+    "smoke": "node scripts/smoke.js"
+  },
+  "dependencies": {
+    "@kuntay/swisseph": "^0.2.2"
+  }
+}

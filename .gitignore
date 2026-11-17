@@ -1,7 +1,10 @@
 # dependencies
 /node_modules
+/chart-api/node_modules
 /.pnp
 .pnp.js
+.vercel
+/chart-api/.vercel
 
 # production build (built in CI / on the runner)
 /build

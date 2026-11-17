@@ -22,4 +22,5 @@
 export const CHART_PROVIDER_IDS = {
   localAstronomy: 'local-astronomy-engine',
   remoteApi: 'remote-chart-api',
+  hybrid: 'hybrid-swiss-fallback',
 };

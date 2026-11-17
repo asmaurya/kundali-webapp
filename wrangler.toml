@@ -7,6 +7,9 @@
 #   MASTER_PROMPT — optional text appended to every LLM system prompt (Worker-only)
 #   GOOGLE_PLACES_API_KEY — Google Places + Time Zone (Nominatim fallback if unset)
 #   BETA_INVITE_CODE — override invite code server-side
+#   CHART_API_URL — Vercel chart API origin (https://….vercel.app)
+#   CHART_API_KEY — shared bearer with Vercel CHART_API_KEY (optional)
+#   VERCEL_CHART — if https URL → used as CHART_API_URL; else bearer when CHART_API_KEY unset
 # Optional KV binding SETTINGS — durable cross-device account sync (Cache API used otherwise)
 name = "kundali-webapp"
 main = "worker/index.js"
@@ -16,7 +19,7 @@ compatibility_date = "2025-11-01"
 [vars]
 OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
 OPENAI_MODEL = "nvidia/nemotron-3.5-bolt-e4b"
-WORKER_BUILD = "provider-abstractions-nvidia"
+WORKER_BUILD = "swiss-chart-vercel-proxy"
 # Override in dashboard or via `wrangler secret put MASTER_PROMPT` for a longer prompt.
 MASTER_PROMPT = "Ground every answer in the querent kundali JSON provided in context. When a family kundali JSON is also present, compare both charts and state which placements support the reading. Prefer precise Jyotish references (lagna, houses, grahas, dasha) over generic advice."
 

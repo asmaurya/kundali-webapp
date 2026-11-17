@@ -5,9 +5,12 @@ How the beta stays swappable for chart engines, LLMs, and billing without rewrit
 ## ChartProvider
 
 - **Contract:** `computeNatal(birth) → canonical chart JSON` (lagna, grahas, houses, dasha…).
-- **Today:** `local-astronomy-engine` (`src/providers/chart/localChartProvider.js`).
-- **Later:** set `REACT_APP_CHART_API_URL` or `setChartProvider(...)` to use Swiss Ephemeris / astrology-insights / Vedika behind `remoteChartProvider`.
-- **Call site:** `createChart()` in `src/api.js` only. UI (`CreatingChartScreen`, `profiles`) never imports an ephemeris library.
+- **Default (hybrid):** Worker `POST /api/chart` → Vercel Swiss Ephemeris (`chart-api/`, `@kuntay/swisseph`); falls back to local `astronomy-engine` if remote is down/unconfigured.
+- **Remote-only:** set `REACT_APP_CHART_API_URL` to the Vercel origin.
+- **Local-only:** set `REACT_APP_CHART_LOCAL_ONLY=1` (tests / offline).
+- **Call site:** `createChart()` in `src/api.js` only. UI never imports an ephemeris library.
+
+Deploy notes: see `chart-api/README.md`. Cloudflare needs `CHART_API_URL` (+ optional `CHART_API_KEY` / `VERCEL_CHART` bearer).
 
 ## AnswerProvider + chat context (stateless LLM)
 
@@ -53,7 +56,10 @@ Aligned with mother-repo `docs/ARCHITECTURE.md` Phase B (providers) → Phase C 
 
 | Variable | Effect |
 |----------|--------|
-| `REACT_APP_CHART_API_URL` | Prefer remote ChartProvider |
+| `REACT_APP_CHART_API_URL` | Remote-only ChartProvider (Vercel origin) |
+| `REACT_APP_CHART_LOCAL_ONLY` | Force local astronomy-engine |
+| Worker `CHART_API_URL` | Vercel chart API origin for `/api/chart` proxy |
+| Worker `CHART_API_KEY` / `VERCEL_CHART` | Bearer shared with Vercel `CHART_API_KEY` |
 | `REACT_APP_API_BASE` | Prefix for Worker AnswerProvider (usually empty — same origin) |
 | Worker `NVIDIA_API_KEY` or `OPENAI_API_KEY` | Real LLM behind `/api/chat` (never in the browser) |
 | Worker `OPENAI_BASE_URL` | OpenAI-compatible host; NVIDIA NIM → `https://integrate.api.nvidia.com/v1` |
