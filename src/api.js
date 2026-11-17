@@ -214,7 +214,7 @@ export async function fetchLlmLab(session, adminToken = '') {
     if (!response.ok) {
       return { ok: false, error: data.detail || data.error || 'unauthorized' };
     }
-    return { ok: true, lab: data.lab };
+    return { ok: true, lab: data.lab, trace: data.trace || null };
   } catch (error) {
     return { ok: false, error: String(error.message || error) };
   }
@@ -237,7 +237,38 @@ export async function saveLlmLab(session, adminToken = '', lab = {}) {
     if (!response.ok) {
       return { ok: false, error: data.detail || data.error || 'save_failed' };
     }
-    return { ok: true, lab: data.lab };
+    return {
+      ok: true,
+      lab: data.lab,
+      secretSaved: Boolean(data.secretSaved),
+      secretName: data.secretName || null,
+      note: data.note || null,
+    };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+}
+
+/** Run a one-off LLM probe and return the color-console trace. */
+export async function probeLlmLab(session, adminToken = '', { question, chartContext, locale } = {}) {
+  try {
+    const response = await fetch('/api/admin/llm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        adminToken,
+        action: 'probe',
+        question,
+        chartContext,
+        locale,
+      }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      return { ok: false, error: data.detail || data.error || 'probe_failed', trace: data.trace || null };
+    }
+    return { ok: true, reply: data.reply, trace: data.trace || null, lab: data.lab };
   } catch (error) {
     return { ok: false, error: String(error.message || error) };
   }

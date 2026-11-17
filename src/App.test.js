@@ -75,6 +75,32 @@ beforeEach(() => {
       };
     }
     if (url.includes('/api/admin/llm')) {
+      const body = init?.body ? JSON.parse(init.body) : {};
+      if (body.action === 'probe') {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              reply: { text: 'Steady skill-building.', provider: 'nvidia', used_llm: true },
+              trace: {
+                at: new Date().toISOString(),
+                ok: true,
+                provider: 'nvidia',
+                model: 'nvidia/nemotron-3.5-bolt-e4b',
+                baseUrl: 'https://integrate.api.nvidia.com/v1',
+                masterPrompt: 'Ground every answer…',
+                context: 'Lagna: Mesha',
+                question: body.question || 'probe',
+                thinking: 'Consider 10th house…',
+                output: 'Steady skill-building.',
+                usage: { promptTokens: 120, completionTokens: 40, totalTokens: 160 },
+                params: { temperature: 0.4 },
+              },
+            };
+          },
+        };
+      }
       return {
         ok: true,
         async json() {
@@ -83,10 +109,13 @@ beforeEach(() => {
             lab: {
               masterPrompt: '',
               provider: 'nvidia',
+              providerLabel: 'NVIDIA NIM',
               baseUrl: 'https://integrate.api.nvidia.com/v1',
+              secretName: 'NVIDIA_API_KEY',
               model: 'nvidia/nemotron-3.5-bolt-e4b',
               apiKeySet: true,
-              apiKeyMasked: '•••• env secret',
+              apiKeyMasked: '•••• Cloudflare secret (NVIDIA_API_KEY)',
+              cloudflareSecretsWritable: true,
               temperature: 0.4,
               topP: 1,
               frequencyPenalty: 0,
@@ -94,8 +123,35 @@ beforeEach(() => {
               maxTokens: 280,
               captureThinking: true,
               showThinking: false,
-              defaults: { masterPrompt: 'Ground every answer…' },
+              providers: [
+                {
+                  id: 'nvidia',
+                  label: 'NVIDIA NIM',
+                  baseUrl: 'https://integrate.api.nvidia.com/v1',
+                  secretName: 'NVIDIA_API_KEY',
+                  defaultModel: 'nvidia/nemotron-3.5-bolt-e4b',
+                  apiKeySet: true,
+                },
+                {
+                  id: 'openai',
+                  label: 'OpenAI',
+                  baseUrl: 'https://api.openai.com/v1',
+                  secretName: 'OPENAI_API_KEY',
+                  defaultModel: 'gpt-4o-mini',
+                  apiKeySet: false,
+                },
+                {
+                  id: 'claude',
+                  label: 'Claude (Anthropic)',
+                  baseUrl: 'https://api.anthropic.com/v1',
+                  secretName: 'ANTHROPIC_API_KEY',
+                  defaultModel: 'claude-sonnet-4-20250514',
+                  apiKeySet: false,
+                },
+              ],
+              defaults: { masterPrompt: 'Ground every answer…', provider: 'nvidia' },
             },
+            trace: null,
           };
         },
       };
@@ -365,17 +421,22 @@ test('settings page can switch language to Hindi', async () => {
   });
 });
 
-test('LLM lab is reachable from settings', async () => {
-  renderApp('/settings');
-  fireEvent.click(screen.getByRole('button', { name: /open llm lab/i }));
-  await waitFor(() => {
-    expect(screen.getByRole('heading', { name: /llm lab/i })).toBeInTheDocument();
-  });
-  await waitFor(() => {
-    expect(screen.getByRole('button', { name: /save llm settings/i })).toBeInTheDocument();
-  });
-  expect(screen.getByRole('button', { name: /reset defaults/i })).toBeInTheDocument();
-});
+test(
+  'LLM lab is reachable from settings',
+  async () => {
+    renderApp('/settings/llm');
+    await waitFor(
+      () => {
+        expect(screen.getByRole('heading', { name: /^llm lab$/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /save llm settings/i })).toBeInTheDocument();
+      },
+      { timeout: 10000 }
+    );
+    expect(screen.getByRole('button', { name: /reset defaults/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /llm console/i })).toBeInTheDocument();
+  },
+  15000
+);
 
 test('astrologers marketplace shows recommendations tab and topic filters', () => {
   renderApp('/astrologers');

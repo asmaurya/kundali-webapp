@@ -18,12 +18,40 @@ function masterPrompt(env, lab = null) {
 }
 
 const LLM_LAB_KEY = 'llm:lab';
+const LLM_TRACE_KEY = 'llm:lastTrace';
+
+/** Provider implies base URL + which Cloudflare secret holds the API key. */
+const LLM_PROVIDERS = {
+  nvidia: {
+    id: 'nvidia',
+    label: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    secretName: 'NVIDIA_API_KEY',
+    api: 'openai',
+    defaultModel: 'nvidia/nemotron-3.5-bolt-e4b',
+  },
+  openai: {
+    id: 'openai',
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    secretName: 'OPENAI_API_KEY',
+    api: 'openai',
+    defaultModel: 'gpt-4o-mini',
+  },
+  claude: {
+    id: 'claude',
+    label: 'Claude (Anthropic)',
+    baseUrl: 'https://api.anthropic.com/v1',
+    secretName: 'ANTHROPIC_API_KEY',
+    api: 'anthropic',
+    defaultModel: 'claude-sonnet-4-20250514',
+  },
+};
+
 const DEFAULT_LLM_LAB = {
   masterPrompt: '',
   provider: 'nvidia',
-  baseUrl: '',
   model: '',
-  apiKey: '',
   temperature: 0.4,
   topP: 1,
   frequencyPenalty: 0,
@@ -32,6 +60,18 @@ const DEFAULT_LLM_LAB = {
   captureThinking: true,
   showThinking: false,
 };
+
+function normalizeProviderId(value) {
+  const p = String(value || '').toLowerCase().trim();
+  if (p === 'anthropic' || p === 'claude') return 'claude';
+  if (p === 'openai') return 'openai';
+  if (p === 'nvidia' || p === 'nim') return 'nvidia';
+  return 'nvidia';
+}
+
+function providerMeta(providerId) {
+  return LLM_PROVIDERS[normalizeProviderId(providerId)] || LLM_PROVIDERS.nvidia;
+}
 
 function llmLabCacheKey() {
   return new Request('https://kundali-beta.internal/llm-lab');
@@ -55,7 +95,11 @@ async function readLlmLab(env) {
 }
 
 async function writeLlmLab(env, lab) {
-  const payload = { ...DEFAULT_LLM_LAB, ...lab, updatedAt: new Date().toISOString() };
+  // Never persist API keys in lab storage — keys live only as Cloudflare secrets.
+  const { apiKey: _drop, baseUrl: _dropBase, ...safe } = { ...DEFAULT_LLM_LAB, ...lab };
+  const payload = { ...safe, updatedAt: new Date().toISOString() };
+  delete payload.apiKey;
+  delete payload.baseUrl;
   if (env.SETTINGS) {
     await env.SETTINGS.put(LLM_LAB_KEY, JSON.stringify(payload));
   }
@@ -75,6 +119,91 @@ async function writeLlmLab(env, lab) {
   return payload;
 }
 
+function llmTraceCacheKey() {
+  return new Request('https://kundali-beta.internal/llm-trace');
+}
+
+async function readLlmTrace(env) {
+  if (env.SETTINGS) {
+    const raw = await env.SETTINGS.get(LLM_TRACE_KEY, 'json');
+    if (raw) return raw;
+  }
+  try {
+    const cached = await caches.default.match(llmTraceCacheKey());
+    if (cached) return cached.json();
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function writeLlmTrace(env, trace) {
+  const payload = { ...trace, at: trace.at || new Date().toISOString() };
+  if (env.SETTINGS) {
+    await env.SETTINGS.put(LLM_TRACE_KEY, JSON.stringify(payload));
+  }
+  try {
+    await caches.default.put(
+      llmTraceCacheKey(),
+      new Response(JSON.stringify(payload), {
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'max-age=31536000',
+        },
+      })
+    );
+  } catch {
+    // ignore
+  }
+  return payload;
+}
+
+/** Push an API key into a Cloudflare Worker secret (removed from lab storage). */
+async function putWorkerSecret(env, secretName, secretValue) {
+  const accountId = String(env.CF_ACCOUNT_ID || '').trim();
+  const token = String(env.CF_API_TOKEN || '').trim();
+  const scriptName = String(env.CF_SCRIPT_NAME || 'kundali-webapp').trim();
+  if (!accountId || !token) {
+    return {
+      ok: false,
+      error:
+        'CF_ACCOUNT_ID / CF_API_TOKEN missing on Worker — cannot write Cloudflare secrets from LLM Lab.',
+    };
+  }
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/secrets`,
+    {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: secretName,
+        text: secretValue,
+        type: 'secret_text',
+      }),
+    }
+  );
+  const raw = await response.text();
+  let payload = null;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    payload = null;
+  }
+  if (!response.ok || payload?.success === false) {
+    const detail =
+      payload?.errors?.[0]?.message || raw.slice(0, 200) || `status_${response.status}`;
+    return { ok: false, error: detail };
+  }
+  return { ok: true, secretName };
+}
+
+function secretPresent(env, secretName) {
+  return Boolean(String(env[secretName] || '').trim());
+}
+
 function authorizeAdmin(body, env) {
   const email = authorizeBeta(body, env);
   if (!email) return null;
@@ -86,19 +215,24 @@ function authorizeAdmin(body, env) {
 }
 
 function publicLlmLabView(lab, env) {
-  const envCfg = llmConfigFromEnv(env);
-  const hasOverrideKey = Boolean(String(lab.apiKey || '').trim());
+  const resolvedProvider = normalizeProviderId(
+    lab.provider ||
+      (/nvidia\.com/i.test(String(env.OPENAI_BASE_URL || '')) ? 'nvidia' : '') ||
+      (env.ANTHROPIC_API_KEY && !env.NVIDIA_API_KEY && !env.OPENAI_API_KEY ? 'claude' : '') ||
+      (env.NVIDIA_API_KEY ? 'nvidia' : 'openai')
+  );
+  const resolvedMeta = providerMeta(resolvedProvider);
+  const keySet = secretPresent(env, resolvedMeta.secretName);
   return {
     masterPrompt: lab.masterPrompt || '',
-    provider: lab.provider || envCfg?.provider || 'nvidia',
-    baseUrl: lab.baseUrl || env.OPENAI_BASE_URL || '',
-    model: lab.model || env.OPENAI_MODEL || envCfg?.model || '',
-    apiKeySet: hasOverrideKey || Boolean(env.OPENAI_API_KEY || env.NVIDIA_API_KEY),
-    apiKeyMasked: hasOverrideKey
-      ? maskSecret(lab.apiKey)
-      : env.OPENAI_API_KEY || env.NVIDIA_API_KEY
-        ? '•••• env secret'
-        : '',
+    provider: resolvedProvider,
+    providerLabel: resolvedMeta.label,
+    baseUrl: resolvedMeta.baseUrl,
+    secretName: resolvedMeta.secretName,
+    model: lab.model || env.OPENAI_MODEL || resolvedMeta.defaultModel,
+    apiKeySet: keySet,
+    apiKeyMasked: keySet ? `•••• Cloudflare secret (${resolvedMeta.secretName})` : '',
+    cloudflareSecretsWritable: Boolean(env.CF_ACCOUNT_ID && env.CF_API_TOKEN),
     temperature: Number(lab.temperature ?? DEFAULT_LLM_LAB.temperature),
     topP: Number(lab.topP ?? DEFAULT_LLM_LAB.topP),
     frequencyPenalty: Number(lab.frequencyPenalty ?? 0),
@@ -107,10 +241,18 @@ function publicLlmLabView(lab, env) {
     captureThinking: lab.captureThinking !== false,
     showThinking: Boolean(lab.showThinking),
     updatedAt: lab.updatedAt || null,
+    providers: Object.values(LLM_PROVIDERS).map((p) => ({
+      id: p.id,
+      label: p.label,
+      baseUrl: p.baseUrl,
+      secretName: p.secretName,
+      defaultModel: p.defaultModel,
+      apiKeySet: secretPresent(env, p.secretName),
+    })),
     defaults: {
       masterPrompt: String(env.MASTER_PROMPT || DEFAULT_MASTER_PROMPT),
-      model: env.OPENAI_MODEL || envCfg?.model || '',
-      baseUrl: env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+      model: env.OPENAI_MODEL || resolvedMeta.defaultModel,
+      provider: resolvedProvider,
     },
   };
 }
@@ -298,47 +440,43 @@ function chartAwareFallback(question, chartContext, locale) {
  *   OPENAI_BASE_URL  (default OpenAI; NVIDIA: https://integrate.api.nvidia.com/v1)
  *   OPENAI_MODEL     (OpenAI default gpt-4o-mini; set to your NIM model id)
  */
-function llmConfigFromEnv(env) {
-  const key = env.OPENAI_API_KEY || env.NVIDIA_API_KEY || '';
-  if (!key) return null;
-  const baseUrl = String(env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const isNvidia = /nvidia\.com/i.test(baseUrl) || Boolean(env.NVIDIA_API_KEY && !env.OPENAI_API_KEY);
-  const model =
-    env.OPENAI_MODEL ||
-    (isNvidia ? 'meta/llama-3.1-70b-instruct' : 'gpt-4o-mini');
-  return {
-    key,
-    baseUrl,
-    model,
-    provider: isNvidia ? 'nvidia' : 'openai',
-  };
+function inferProviderFromEnv(env) {
+  if (/nvidia\.com/i.test(String(env.OPENAI_BASE_URL || ''))) return 'nvidia';
+  if (env.NVIDIA_API_KEY && !env.OPENAI_API_KEY) return 'nvidia';
+  if (env.ANTHROPIC_API_KEY && !env.NVIDIA_API_KEY && !env.OPENAI_API_KEY) return 'claude';
+  if (env.OPENAI_API_KEY) return 'openai';
+  if (env.NVIDIA_API_KEY) return 'nvidia';
+  if (env.ANTHROPIC_API_KEY) return 'claude';
+  return 'nvidia';
 }
 
-/** Merge dashboard lab overrides with Worker env secrets/vars. */
+/** Resolve provider → fixed base URL + Cloudflare secret key + lab params. */
 function llmConfig(env, lab = null) {
-  const base = llmConfigFromEnv(env);
-  const overrideKey = String(lab?.apiKey || '').trim();
-  const key = overrideKey || base?.key || '';
-  if (!key) return null;
+  const provider = normalizeProviderId(lab?.provider || inferProviderFromEnv(env));
+  const meta = providerMeta(provider);
+  const key = String(env[meta.secretName] || '').trim();
+  // Fallback for older NVIDIA setups that only had OPENAI_API_KEY against NIM URL.
+  const fallbackKey =
+    !key && provider === 'nvidia'
+      ? String(env.OPENAI_API_KEY || '').trim()
+      : !key && provider === 'openai'
+        ? String(env.NVIDIA_API_KEY || '').trim()
+        : '';
+  const resolvedKey = key || fallbackKey;
+  if (!resolvedKey) return null;
 
-  const providerHint = String(lab?.provider || '').toLowerCase();
-  const baseUrl = String(
-    lab?.baseUrl || base?.baseUrl || env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
-  ).replace(/\/$/, '');
-  const isNvidia =
-    providerHint === 'nvidia' ||
-    /nvidia\.com/i.test(baseUrl) ||
-    Boolean(env.NVIDIA_API_KEY && !env.OPENAI_API_KEY && !overrideKey);
   const model =
     String(lab?.model || '').trim() ||
-    base?.model ||
-    (isNvidia ? 'meta/llama-3.1-70b-instruct' : 'gpt-4o-mini');
+    String(env.OPENAI_MODEL || '').trim() ||
+    meta.defaultModel;
 
   return {
-    key,
-    baseUrl,
+    key: resolvedKey,
+    baseUrl: meta.baseUrl,
     model,
-    provider: isNvidia ? 'nvidia' : providerHint === 'openai' ? 'openai' : isNvidia ? 'nvidia' : 'openai',
+    provider: meta.id,
+    api: meta.api,
+    secretName: meta.secretName,
     temperature: clampNumber(lab?.temperature, 0, 2, 0.4),
     topP: clampNumber(lab?.topP, 0, 1, 1),
     frequencyPenalty: clampNumber(lab?.frequencyPenalty, -2, 2, 0),
@@ -364,50 +502,55 @@ function normalizeChatHistory(history) {
   return out;
 }
 
-async function openAiReply(env, question, chartContext, history, locale, summary = '', lab = null) {
-  const cfg = llmConfig(env, lab);
-  if (!cfg) return null;
-
+function buildPromptParts(env, lab, question, chartContext, locale, summary, cfg) {
   const langLine =
     locale === 'hi'
       ? 'Reply in clear Hindi (Devanagari). Keep Jyotish terms (lagna, dasha, nakshatra) as commonly used.'
       : 'Reply in clear English.';
-
-  const summaryBlock = summary
-    ? `\n\nRolling conversation summary (stateless context; trust this over raw history when they disagree):\n${summary}`
-    : '';
-
   const thinkingInstruction = cfg.captureThinking
     ? 'If you reason internally, keep that separate from the user-facing answer. The answer content must be the final reading only.'
     : 'Do not include chain-of-thought; output only the final user-facing answer.';
+  const master = masterPrompt(env, lab);
+  const context = [
+    `Kundali + context (querent JSON is always present; family JSON only when relevant):\n${chartContext || 'No chart provided.'}`,
+    summary
+      ? `Rolling conversation summary (stateless context; trust this over raw history when they disagree):\n${summary}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  const system = [TONE, langLine, thinkingInstruction, `Master prompt:\n${master}`, context]
+    .filter(Boolean)
+    .join('\n\n');
+  const userQuestion = `${question}\n\n(Reply with the final answer only — one short reading, no planning.)`;
+  return { master, context, question: userQuestion, system, langLine, thinkingInstruction };
+}
 
-  const messages = [
-    {
-      role: 'system',
-      content: [
-        TONE,
-        langLine,
-        thinkingInstruction,
-        `Master prompt:\n${masterPrompt(env, lab)}`,
-        `Kundali + context (querent JSON is always present; family JSON only when relevant):\n${chartContext || 'No chart provided.'}`,
-        summaryBlock.trim(),
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
-    },
-    ...normalizeChatHistory(history),
-    {
-      role: 'user',
-      content: `${question}\n\n(Reply with the final answer only — one short reading, no planning.)`,
-    },
-  ];
+function usageFromPayload(payload) {
+  const u = payload?.usage || {};
+  return {
+    promptTokens: u.prompt_tokens ?? u.input_tokens ?? null,
+    completionTokens: u.completion_tokens ?? u.output_tokens ?? null,
+    totalTokens:
+      u.total_tokens ??
+      (u.prompt_tokens != null && u.completion_tokens != null
+        ? u.prompt_tokens + u.completion_tokens
+        : u.input_tokens != null && u.output_tokens != null
+          ? u.input_tokens + u.output_tokens
+          : null),
+    raw: u,
+  };
+}
 
-  // muse-glimmer / similar reasoning models: low temp + tiny max_tokens often yields empty
-  // content because reasoning shares the token budget (NVIDIA docs).
+async function callOpenAiCompatible(cfg, system, history, userQuestion) {
   const isReasoningNim = cfg.provider === 'nvidia' && /glimmer|muse|reason/i.test(cfg.model);
   const body = {
     model: cfg.model,
-    messages,
+    messages: [
+      { role: 'system', content: system },
+      ...normalizeChatHistory(history),
+      { role: 'user', content: userQuestion },
+    ],
     stream: false,
     temperature: isReasoningNim ? Math.max(cfg.temperature, 0.95) : cfg.temperature,
     max_tokens: isReasoningNim ? Math.max(cfg.maxTokens, 4096) : cfg.maxTokens,
@@ -419,6 +562,7 @@ async function openAiReply(env, question, chartContext, history, locale, summary
     body.reasoning_effort = cfg.captureThinking ? 'medium' : 'minimal';
   }
 
+  const started = Date.now();
   const response = await fetch(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -428,42 +572,174 @@ async function openAiReply(env, question, chartContext, history, locale, summary
     },
     body: JSON.stringify(body),
   });
-
   const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`LLM ${response.status}: ${raw.slice(0, 280)}`);
-  }
-  if (response.status === 202) {
-    throw new Error(`LLM 202 pending: ${raw.slice(0, 200)}`);
-  }
-
+  const latencyMs = Date.now() - started;
+  if (!response.ok) throw new Error(`LLM ${response.status}: ${raw.slice(0, 280)}`);
+  if (response.status === 202) throw new Error(`LLM 202 pending: ${raw.slice(0, 200)}`);
   let payload;
   try {
     payload = JSON.parse(raw);
   } catch {
     throw new Error(`LLM non-JSON body: ${raw.slice(0, 200)}`);
   }
-
   const message = payload.choices?.[0]?.message || {};
-  const thinkingRaw = extractThinkingText(message);
-  const text = finalizeAssistantText(extractMessageText(message));
-  if (!text) {
-    const finish = payload.choices?.[0]?.finish_reason || 'unknown';
-    throw new Error(
-      `Empty LLM response (${finish}): ${JSON.stringify(payload).slice(0, 280)}`
-    );
-  }
-  const result = {
-    text,
-    provider: cfg.provider,
-    used_llm: true,
-    model: cfg.model,
+  return {
+    text: finalizeAssistantText(extractMessageText(message)),
+    thinking: extractThinkingText(message),
+    usage: usageFromPayload(payload),
+    latencyMs,
+    requestBody: { ...body, messages: undefined, messageCount: body.messages.length },
+    finishReason: payload.choices?.[0]?.finish_reason || null,
   };
-  if (cfg.captureThinking && thinkingRaw) {
-    result.thinkingCaptured = true;
-    if (cfg.showThinking) result.thinking = thinkingRaw;
+}
+
+async function callAnthropic(cfg, system, history, userQuestion) {
+  const messages = [
+    ...normalizeChatHistory(history).map((turn) => ({
+      role: turn.role === 'assistant' ? 'assistant' : 'user',
+      content: turn.content,
+    })),
+    { role: 'user', content: userQuestion },
+  ];
+  // Anthropic requires alternating roles starting with user.
+  const normalized = [];
+  messages.forEach((turn) => {
+    if (normalized.length && normalized[normalized.length - 1].role === turn.role) {
+      normalized[normalized.length - 1].content += `\n${turn.content}`;
+    } else {
+      normalized.push({ ...turn });
+    }
+  });
+  if (!normalized.length || normalized[0].role !== 'user') {
+    normalized.unshift({ role: 'user', content: userQuestion });
   }
-  return result;
+
+  const body = {
+    model: cfg.model,
+    max_tokens: cfg.maxTokens,
+    temperature: cfg.temperature,
+    system,
+    messages: normalized,
+  };
+  // top_p is supported; frequency/presence penalties are not on Anthropic Messages.
+  if (cfg.topP != null && cfg.topP < 1) body.top_p = cfg.topP;
+
+  const started = Date.now();
+  const response = await fetch(`${cfg.baseUrl}/messages`, {
+    method: 'POST',
+    headers: {
+      'x-api-key': cfg.key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await response.text();
+  const latencyMs = Date.now() - started;
+  if (!response.ok) throw new Error(`LLM ${response.status}: ${raw.slice(0, 280)}`);
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    throw new Error(`LLM non-JSON body: ${raw.slice(0, 200)}`);
+  }
+  const blocks = Array.isArray(payload.content) ? payload.content : [];
+  const thinking = blocks
+    .filter((b) => b && (b.type === 'thinking' || b.type === 'redacted_thinking'))
+    .map((b) => b.thinking || b.data || '')
+    .filter(Boolean)
+    .join('\n\n');
+  const text = finalizeAssistantText(
+    blocks
+      .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+      .map((b) => b.text)
+      .join('\n')
+      .trim()
+  );
+  return {
+    text,
+    thinking,
+    usage: usageFromPayload(payload),
+    latencyMs,
+    requestBody: { ...body, system: undefined, messages: undefined, messageCount: body.messages.length },
+    finishReason: payload.stop_reason || null,
+  };
+}
+
+async function openAiReply(env, question, chartContext, history, locale, summary = '', lab = null) {
+  const cfg = llmConfig(env, lab);
+  if (!cfg) return null;
+
+  const parts = buildPromptParts(env, lab, question, chartContext, locale, summary, cfg);
+  const params = {
+    temperature: cfg.temperature,
+    topP: cfg.topP,
+    frequencyPenalty: cfg.frequencyPenalty,
+    presencePenalty: cfg.presencePenalty,
+    maxTokens: cfg.maxTokens,
+    captureThinking: cfg.captureThinking,
+    showThinking: cfg.showThinking,
+  };
+
+  const baseTrace = {
+    provider: cfg.provider,
+    model: cfg.model,
+    baseUrl: cfg.baseUrl,
+    api: cfg.api,
+    params,
+    masterPrompt: parts.master,
+    context: parts.context,
+    question: String(question || ''),
+    historyTurns: Array.isArray(history) ? history.length : 0,
+  };
+
+  try {
+    const reply =
+      cfg.api === 'anthropic'
+        ? await callAnthropic(cfg, parts.system, history, parts.question)
+        : await callOpenAiCompatible(cfg, parts.system, history, parts.question);
+
+    if (!reply.text) {
+      throw new Error(`Empty LLM response (${reply.finishReason || 'unknown'})`);
+    }
+
+    const trace = {
+      ...baseTrace,
+      ok: true,
+      thinking: cfg.captureThinking ? reply.thinking || '' : '',
+      output: reply.text,
+      usage: reply.usage,
+      latencyMs: reply.latencyMs,
+      finishReason: reply.finishReason,
+      request: reply.requestBody,
+    };
+    await writeLlmTrace(env, trace);
+
+    const result = {
+      text: reply.text,
+      provider: cfg.provider,
+      used_llm: true,
+      model: cfg.model,
+      usage: reply.usage,
+      latencyMs: reply.latencyMs,
+    };
+    if (cfg.captureThinking && reply.thinking) {
+      result.thinkingCaptured = true;
+      if (cfg.showThinking) result.thinking = reply.thinking;
+    }
+    return result;
+  } catch (error) {
+    await writeLlmTrace(env, {
+      ...baseTrace,
+      ok: false,
+      error: String(error?.message || error).slice(0, 400),
+      thinking: '',
+      output: '',
+      usage: null,
+    });
+    throw error;
+  }
 }
 
 /** Drop leaked chain-of-thought / planning when the model puts it in content. */
@@ -612,6 +888,7 @@ async function handleChat(request, env) {
       return json({
         ...llm,
         usage: {
+          ...(llm.usage || {}),
           modelTier: body.modelTier || 'flash',
           anonymousId: body.anonymousId || '',
         },
@@ -880,25 +1157,40 @@ async function handleLlmLab(request, env) {
 
   if (body.action === 'get') {
     const lab = await readLlmLab(env);
-    return json({ ok: true, lab: publicLlmLabView(lab, env), admin: email });
+    const trace = await readLlmTrace(env);
+    return json({ ok: true, lab: publicLlmLabView(lab, env), trace, admin: email });
+  }
+
+  if (body.action === 'trace') {
+    const trace = await readLlmTrace(env);
+    return json({ ok: true, trace });
+  }
+
+  if (body.action === 'probe') {
+    const lab = await readLlmLab(env);
+    const question = String(body.question || 'Give a one-sentence career note from this chart.').trim();
+    const chartContext = String(body.chartContext || 'Lagna: Mesha. Moon: Karka. Current dasha: Saturn–Mercury.').slice(
+      0,
+      4000
+    );
+    try {
+      const llm = await openAiReply(env, question, chartContext, [], body.locale === 'hi' ? 'hi' : 'en', '', lab);
+      const trace = await readLlmTrace(env);
+      return json({ ok: true, reply: llm, trace, lab: publicLlmLabView(lab, env) });
+    } catch (error) {
+      const trace = await readLlmTrace(env);
+      return json({ ok: false, error: String(error?.message || error), trace }, 502);
+    }
   }
 
   if (body.action === 'put') {
     const existing = await readLlmLab(env);
     const next = { ...existing };
+    delete next.apiKey;
+    delete next.baseUrl;
     if (typeof body.masterPrompt === 'string') next.masterPrompt = body.masterPrompt.slice(0, 12000);
-    if (typeof body.provider === 'string') {
-      const p = body.provider.toLowerCase();
-      next.provider = p === 'openai' ? 'openai' : 'nvidia';
-    }
-    if (typeof body.baseUrl === 'string') next.baseUrl = body.baseUrl.trim().slice(0, 300);
+    if (typeof body.provider === 'string') next.provider = normalizeProviderId(body.provider);
     if (typeof body.model === 'string') next.model = body.model.trim().slice(0, 200);
-    if (typeof body.apiKey === 'string') {
-      const key = body.apiKey.trim();
-      // Empty string clears override; masked placeholder keeps existing.
-      if (!key) next.apiKey = '';
-      else if (!key.includes('•')) next.apiKey = key.slice(0, 200);
-    }
     if (body.temperature != null) next.temperature = clampNumber(body.temperature, 0, 2, existing.temperature);
     if (body.topP != null) next.topP = clampNumber(body.topP, 0, 1, existing.topP);
     if (body.frequencyPenalty != null) {
@@ -911,8 +1203,34 @@ async function handleLlmLab(request, env) {
     if (typeof body.captureThinking === 'boolean') next.captureThinking = body.captureThinking;
     if (typeof body.showThinking === 'boolean') next.showThinking = body.showThinking;
     next.updatedBy = email;
+
+    let secretResult = null;
+    const incomingKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+    if (incomingKey && !incomingKey.includes('•')) {
+      const meta = providerMeta(next.provider);
+      secretResult = await putWorkerSecret(env, meta.secretName, incomingKey.slice(0, 400));
+      if (!secretResult.ok) {
+        return json(
+          {
+            error: 'secret_write_failed',
+            detail: secretResult.error,
+            lab: publicLlmLabView(existing, env),
+          },
+          502
+        );
+      }
+    }
+
     const saved = await writeLlmLab(env, next);
-    return json({ ok: true, lab: publicLlmLabView(saved, env) });
+    return json({
+      ok: true,
+      lab: publicLlmLabView(saved, env),
+      secretSaved: Boolean(secretResult?.ok),
+      secretName: secretResult?.secretName || null,
+      note: secretResult?.ok
+        ? `API key stored as Cloudflare secret ${secretResult.secretName} and removed from lab storage.`
+        : undefined,
+    });
   }
 
   if (body.action === 'reset') {
@@ -920,7 +1238,7 @@ async function handleLlmLab(request, env) {
     return json({ ok: true, lab: publicLlmLabView(saved, env) });
   }
 
-  return json({ error: 'action must be get, put, or reset' }, 400);
+  return json({ error: 'action must be get, put, reset, trace, or probe' }, 400);
 }
 
 export default {
