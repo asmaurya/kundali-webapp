@@ -10,8 +10,9 @@ export function createRemoteChartProvider({
   fetchImpl = fetch,
 } = {}) {
   const root = String(baseUrl || '').replace(/\/$/, '');
-  const chartUrl = root ? `${root}/v1/chart` : '/api/chart';
-  const healthUrl = root ? `${root}/health` : '/api/health';
+  // Vercel serverless lives under /api/*; Worker proxy stays at /api/chart.
+  const chartUrl = root ? `${root}/api/v1/chart` : '/api/chart';
+  const healthUrl = root ? `${root}/api/health` : '/api/health';
 
   return {
     id: CHART_PROVIDER_IDS.remoteApi,

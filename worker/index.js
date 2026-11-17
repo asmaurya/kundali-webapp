@@ -59,7 +59,7 @@ async function handleChartProxy(request, env) {
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
 
   try {
-    const upstream = await fetch(`${baseUrl}/v1/chart`, {
+    const upstream = await fetch(`${baseUrl}/api/v1/chart`, {
       method: 'POST',
       headers,
       body: bodyText || '{}',
@@ -90,12 +90,13 @@ async function probeChartRemote(env) {
   try {
     const headers = {};
     if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-    const response = await fetch(`${baseUrl}/health`, { headers });
+    const response = await fetch(`${baseUrl}/api/health`, { headers });
     return { ok: response.ok, detail: response.ok ? 'swiss-ephemeris' : `status_${response.status}` };
   } catch (error) {
     return { ok: false, detail: String(error?.message || error).slice(0, 80) };
   }
 }
+
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -695,6 +696,7 @@ export default {
     if (url.pathname === '/api/chart' && request.method === 'POST') {
       return handleChartProxy(request, env);
     }
+
 
     if (url.pathname === '/api/chat' && request.method === 'POST') {
       return handleChat(request, env);

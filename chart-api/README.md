@@ -12,8 +12,10 @@ Serverless natal chart service for the Kundali web beta.
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/health` | Liveness |
-| `POST` | `/v1/chart` | Body `{ "birth": { date, time, place, lat?, lon?, tzOffsetHours? } }` |
+| `GET` | `/api/health` | Liveness |
+| `POST` | `/api/v1/chart` | Body `{ "birth": { date, time, place, lat?, lon?, tzOffsetHours? } }` |
+
+Production: https://kundali-chart-api.vercel.app
 
 Optional auth: set `CHART_API_KEY` and send `Authorization: Bearer <key>`.
 

@@ -4,12 +4,10 @@
   "framework": null,
   "buildCommand": null,
   "installCommand": "npm install",
-  "functions": {
-    "api/**/*.js": {
-      "memory": 1024,
-      "maxDuration": 20
-    }
-  },
+  "rewrites": [
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/v1/chart", "destination": "/api/v1/chart" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
