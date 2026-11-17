@@ -9,6 +9,26 @@ import {
 } from './betaSession';
 import { askOracle } from './api';
 import { scriptedReplyFor } from './scriptedReplies';
+import { chartContextForPrompt } from './lib/chartEngine';
+import { listProfiles } from './lib/profiles';
+import {
+  markAstrologerUsed,
+  maybeCaptureRemedyFromReply,
+  maybeCaptureReportFromChat,
+} from './lib/libraryStore';
+
+function familyContextFromQuestion(question) {
+  const profiles = listProfiles().filter((p) => !p.isSelf && p.chart);
+  if (!profiles.length) return '';
+  const mentioned = profiles.filter((p) => {
+    const q = String(question || '').toLowerCase();
+    return q.includes(String(p.name).toLowerCase()) || q.includes(`@${String(p.name).toLowerCase()}`);
+  });
+  if (!mentioned.length) return '';
+  return mentioned
+    .map((p) => `\nFamily chart — ${p.name} (${p.relation}):\n${chartContextForPrompt(p.chart)}`)
+    .join('\n');
+}
 
 export const ASTROLOGERS = {
   'astro-chat': {
@@ -20,6 +40,7 @@ export const ASTROLOGERS = {
     accent: '#5B3FA0',
     tint: '#F1EBFA',
     speciality: 'Chart-based guidance',
+    oneLiner: 'Calm, chart-grounded answers from your Kundali — available anytime.',
     description:
       'Your personal astrology assistant. Answers are generated from your birth chart, dashas and transits.',
   },
@@ -32,6 +53,7 @@ export const ASTROLOGERS = {
     accent: '#2F6B52',
     tint: '#EDF4F0',
     speciality: 'Vedic astrology • Career • Remedies',
+    oneLiner: 'Steady career and Saturn-period guidance with practical remedies.',
     description: '18 years of practice. Specialises in career direction, Saturn transits and remedial measures.',
     price: '₹499 / 30 min',
     experience: '18 years',
@@ -45,6 +67,7 @@ export const ASTROLOGERS = {
     accent: '#9A4A63',
     tint: '#FAEEF2',
     speciality: 'Vedic astrology • Relationships • Marriage',
+    oneLiner: 'Marriage timing and family-chart readings with a gentle voice.',
     description: 'Specialises in compatibility, marriage timing and family consultations.',
     price: '₹399 / 30 min',
     experience: '12 years',
@@ -58,6 +81,7 @@ export const ASTROLOGERS = {
     accent: '#8A6A2F',
     tint: '#F9F3E6',
     speciality: 'Numerology • Health • Career',
+    oneLiner: 'Health and life-path insights blending Vedic chart with numbers.',
     description: 'Works with numerology and health indications alongside classical Vedic charts.',
     price: '₹449 / 30 min',
     experience: '9 years',
@@ -232,6 +256,7 @@ export function ChatProvider({ children }) {
 
     const startChat = (astrologerId = 'astro-chat') => {
       const astrologer = ASTROLOGERS[astrologerId] || ASTROLOGERS['astro-chat'];
+      markAstrologerUsed(astrologer.id);
       const id = nextId();
       const conversation = {
         id,
@@ -258,6 +283,7 @@ export function ChatProvider({ children }) {
       if (!trimmed || !active) return;
       const targetId = active.id;
       const astrologer = ASTROLOGERS[active.astrologerId] || ASTROLOGERS['astro-chat'];
+      markAstrologerUsed(astrologer.id);
 
       setConversations((current) =>
         current.map((conversation) => {
@@ -281,17 +307,23 @@ export function ChatProvider({ children }) {
       if (astrologer.type === 'ai') {
         try {
           const locale = getSettings()?.locale === 'hi' ? 'hi' : 'en';
+          const chart = getChart();
+          const extra = familyContextFromQuestion(trimmed);
           const result = await askOracle({
             question: trimmed,
-            chart: getChart(),
+            chart,
             history: active.messages,
             locale,
+            extraContext: extra,
           });
           replyText = result.text;
         } catch {
           // keep scriptedReplyFor
         }
       }
+
+      maybeCaptureRemedyFromReply({ text: replyText, astrologer });
+      maybeCaptureReportFromChat({ question: trimmed, reply: replyText });
 
       setConversations((current) =>
         current.map((conversation) => {

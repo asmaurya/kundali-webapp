@@ -19,8 +19,8 @@ export function createChart(birthDetails) {
  * Ask the Worker for an answer grounded in the chart.
  * Falls back to a local chart-aware reply if /api/chat is unavailable.
  */
-export async function askOracle({ question, chart, history = [], locale = 'en' }) {
-  const chartContext = chartContextForPrompt(chart);
+export async function askOracle({ question, chart, history = [], locale = 'en', extraContext = '' }) {
+  const chartContext = `${chartContextForPrompt(chart)}${extraContext || ''}`;
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',

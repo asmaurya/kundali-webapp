@@ -2,9 +2,10 @@ import React from 'react';
 import { Box, Chip, IconButton, Typography } from '@mui/material';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 
 function initials(name) {
-  return name
+  return String(name || '')
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
@@ -12,7 +13,9 @@ function initials(name) {
     .join('');
 }
 
-function FamilyMemberCard({ member, onEdit, onPrepare }) {
+function FamilyMemberCard({ member, onEdit, onPrepare, onDelete }) {
+  const isSelf = Boolean(member.isSelf);
+
   return (
     <Box
       sx={{
@@ -45,8 +48,11 @@ function FamilyMemberCard({ member, onEdit, onPrepare }) {
       </Box>
 
       <Box sx={{ minWidth: 0 }}>
-        <Typography sx={{ fontWeight: 600, color: '#1E1B2E' }}>{member.name}</Typography>
-        <Box sx={{ display: 'flex', gap: 1, mt: 0.5, alignItems: 'center' }}>
+        <Typography sx={{ fontWeight: 600, color: '#1E1B2E' }}>
+          {member.name}
+          {isSelf ? ' (You)' : ''}
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1, mt: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
           <Chip
             size="small"
             label={member.relation}
@@ -65,22 +71,33 @@ function FamilyMemberCard({ member, onEdit, onPrepare }) {
       </Box>
 
       <Box sx={{ ml: 'auto', display: 'flex', gap: 1 }}>
-        {!member.chartReady && (
+        {!isSelf && !member.chartReady && (
           <IconButton
             aria-label={`Prepare chart for ${member.name}`}
-            onClick={() => onPrepare(member)}
+            onClick={() => onPrepare?.(member)}
             sx={{ color: '#6B4FA0', bgcolor: '#EFE9F7', borderRadius: '50%' }}
           >
             <AutoAwesomeIcon fontSize="small" />
           </IconButton>
         )}
-        <IconButton
-          aria-label={`Edit ${member.name}`}
-          onClick={() => onEdit(member)}
-          sx={{ color: '#3A3550', bgcolor: '#F6F1F8', borderRadius: '50%' }}
-        >
-          <EditOutlinedIcon fontSize="small" />
-        </IconButton>
+        {!isSelf && (
+          <IconButton
+            aria-label={`Edit ${member.name}`}
+            onClick={() => onEdit?.(member)}
+            sx={{ color: '#3A3550', bgcolor: '#F6F1F8', borderRadius: '50%' }}
+          >
+            <EditOutlinedIcon fontSize="small" />
+          </IconButton>
+        )}
+        {!isSelf && (
+          <IconButton
+            aria-label={`Remove ${member.name}`}
+            onClick={() => onDelete?.(member)}
+            sx={{ color: '#8A4A4A', bgcolor: '#F8EEEE', borderRadius: '50%' }}
+          >
+            <DeleteOutlinedIcon fontSize="small" />
+          </IconButton>
+        )}
       </Box>
     </Box>
   );

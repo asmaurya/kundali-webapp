@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
 import { useLocation } from 'react-router-dom';
 import AddIcon from '@mui/icons-material/Add';
@@ -12,14 +12,22 @@ import SpaIcon from '@mui/icons-material/Spa';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { ASTROLOGERS, useChat } from '../chatStore';
 import { useLocale } from '../i18n/LocaleContext';
+import { listProfiles } from '../lib/profiles';
 
 function ChatInterface() {
   const location = useLocation();
   const { t } = useLocale();
   const { conversations, active, openConversation, startChat, sendMessage } = useChat();
   const [draft, setDraft] = useState('');
+  const inputRef = useRef(null);
   const requested = location.state && location.state.astrologerId;
   const requestedHandled = useRef(false);
+  const familyChips = useMemo(
+    () => listProfiles().filter((p) => !p.isSelf),
+    // Refresh when conversations change keeps it light without a family store subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversations.length]
+  );
 
   const SUGGESTIONS = [
     { label: t('career'), icon: WorkIcon },
@@ -41,7 +49,6 @@ function ChatInterface() {
   }, [requested, conversations, openConversation, startChat]);
 
   const astrologer = ASTROLOGERS[active.astrologerId] || ASTROLOGERS['astro-chat'];
-  const showSuggestions = !active.messages.some((message) => message.role === 'user');
   const groups = Object.values(ASTROLOGERS).map((item) => ({
     astrologer: item,
     chats: conversations.filter((conversation) => conversation.astrologerId === item.id),
@@ -52,6 +59,24 @@ function ChatInterface() {
     if (!draft.trim()) return;
     sendMessage(draft);
     setDraft('');
+  };
+
+  const insertTopic = (label) => {
+    setDraft((current) => {
+      const next = current.trim() ? `${current.trim()} ${label}` : label;
+      return next;
+    });
+    inputRef.current?.focus();
+  };
+
+  const insertMember = (member) => {
+    const token = `@${member.name}`;
+    setDraft((current) => {
+      if (current.includes(token)) return current;
+      const prefix = current.trim();
+      return prefix ? `${prefix} ${token}` : `${token} `;
+    });
+    inputRef.current?.focus();
   };
 
   return (
@@ -175,25 +200,56 @@ function ChatInterface() {
               </Box>
             ))}
 
-            {showSuggestions && (
-              <Box className="suggestions">
-                {SUGGESTIONS.map(({ label, icon: Icon }) => (
-                  <button
-                    type="button"
-                    key={label}
-                    className="suggestion"
-                    onClick={() => sendMessage(label)}
-                  >
-                    <Icon fontSize="inherit" />
-                    {label}
-                  </button>
-                ))}
-              </Box>
-            )}
           </Box>
         </Box>
 
         <Box className="composer-wrap">
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 0.75,
+              px: 0.5,
+              pb: 1,
+              alignItems: 'center',
+            }}
+            aria-label="Add context to your question"
+          >
+            {SUGGESTIONS.map(({ label, icon: Icon }) => (
+              <button
+                type="button"
+                key={label}
+                className="suggestion"
+                onClick={() => insertTopic(label)}
+                style={{ fontSize: 12, padding: '4px 10px' }}
+              >
+                <Icon fontSize="inherit" />
+                {label}
+              </button>
+            ))}
+            {familyChips.map((member) => (
+              <button
+                type="button"
+                key={member.id}
+                className="suggestion"
+                onClick={() => insertMember(member)}
+                title={`Include ${member.name} (${member.relation}) in this question`}
+                style={{
+                  fontSize: 12,
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  border: draft.includes(`@${member.name}`)
+                    ? '1px solid #5B3FA0'
+                    : '1px solid #E6DEEF',
+                  background: draft.includes(`@${member.name}`) ? '#EFE9F7' : '#FFFFFF',
+                  color: '#3A3550',
+                }}
+              >
+                {member.name}
+                <span style={{ color: '#8A849E', marginLeft: 6 }}>{member.relation}</span>
+              </button>
+            ))}
+          </Box>
           <form className="composer" onSubmit={submit}>
             <Tooltip title="Attach a file">
               <IconButton
@@ -206,6 +262,7 @@ function ChatInterface() {
               </IconButton>
             </Tooltip>
             <input
+              ref={inputRef}
               className="composer__input"
               placeholder={t('askPlaceholder')}
               aria-label="Message"
@@ -222,7 +279,7 @@ function ChatInterface() {
             </button>
           </form>
           <Typography className="composer-note">
-            Astro Chat can make mistakes. For important decisions, consult a live astrologer.
+            Tap a family name to include their chart in context. Astro Chat can make mistakes.
           </Typography>
         </Box>
       </section>

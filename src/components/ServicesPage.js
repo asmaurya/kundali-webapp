@@ -9,8 +9,8 @@ const SERVICES = [
     iconBg: '#FBEFC9',
     title: 'Remedies',
     description:
-      'Personalized and practical solutions (mantra, gem, ritual, lifestyle, etc.)',
-    action: { label: 'Open chart', path: '/kundali' },
+      'Personalized and practical solutions gathered from AI and human astrologers',
+    action: { label: 'Open remedies', path: '/remedies' },
   },
   {
     id: 'counseling',
@@ -26,26 +26,22 @@ const SERVICES = [
     icon: '🧑',
     iconBg: '#D9F0DC',
     title: 'Chat with a Live Astrologer',
-    description: 'Get real-time, personalized advice from verified experts',
-    action: { label: 'Chat now', path: '/chat', astrologerId: 'rajiv' },
+    description: 'Browse verified experts, see last used, and keep private ratings',
+    action: { label: 'Open marketplace', path: '/astrologers' },
   },
   {
     id: 'reports',
     icon: '📊',
     iconBg: '#E6DCF6',
     title: 'Detailed Reports',
-    description: 'In-depth analysis (career, marriage, health, finance, etc.)',
-    action: { label: 'View reports', path: '/kundali' },
+    description: 'Download Kundali snapshots and chat findings for you and family',
+    action: { label: 'View reports', path: '/reports' },
   },
 ];
 
 function ServicesPage({ onNavigate }) {
   const openService = (service) => {
-    if (service.action.astrologerId) {
-      onNavigate(service.action.path, { astrologerId: service.action.astrologerId });
-    } else {
-      onNavigate(service.action.path);
-    }
+    onNavigate(service.action.path, service.action.state || undefined);
   };
 
   return (

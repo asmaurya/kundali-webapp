@@ -31,6 +31,18 @@ const conversation = () => screen.getByRole('region', { name: /conversation/i })
 beforeEach(() => {
   clearBetaSession();
   seedCompletedBetaSession({ email: 'abhishek@example.com' });
+  const { saveFamilyMembers } = require('./betaSession');
+  saveFamilyMembers([
+    {
+      id: 1,
+      name: 'Ramesh Sharma',
+      relation: 'Father',
+      date: '1962-03-12',
+      time: '06:15',
+      place: 'Jaipur, Rajasthan, India',
+      chartReady: true,
+    },
+  ]);
   global.fetch = jest.fn(async (input, init) => {
     const url = String(input);
     if (url.includes('/api/chat')) {
@@ -165,7 +177,7 @@ test('the account block with a logout option sits at the bottom of the side pane
 });
 
 test('side panel is available on every page', () => {
-  ['/services', '/family', '/kundali', '/subscription', '/support'].forEach((path) => {
+  ['/services', '/family', '/kundali', '/subscription', '/support', '/reports', '/astrologers', '/remedies'].forEach((path) => {
     const { unmount } = renderApp(path);
     expect(screen.getByLabelText(/open navigation/i)).toBeInTheDocument();
     unmount();
@@ -196,9 +208,22 @@ test('a live astrologer conversation is not blank and offers a live session', ()
 
 test('family page can start adding a member with a relation', () => {
   renderApp('/family');
+  expect(screen.getByText(/\(You\)/i)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /add family member/i }));
   expect(screen.getByLabelText(/relation/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
+});
+
+test('services open dedicated reports, astrologers and remedies pages', () => {
+  renderApp('/services');
+  fireEvent.click(screen.getByText(/detailed reports/i));
+  expect(screen.getByRole('heading', { name: /detailed reports/i })).toBeInTheDocument();
+});
+
+test('chat composer exposes family context chips', () => {
+  renderApp('/chat');
+  // Seeded family names appear as insertable context near the composer.
+  expect(screen.getByRole('button', { name: /ramesh sharma/i })).toBeInTheDocument();
 });
 
 test('unguarded routes redirect to splash when there is no invite', () => {
@@ -319,6 +344,7 @@ test('kundali page shows the North Indian diamond chart when a chart exists', ()
     })
   );
   renderApp('/kundali');
-  expect(screen.getByLabelText(/north indian natal chart/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/lagna kundali north indian chart/i)).toBeInTheDocument();
   expect(screen.getByText(/north indian whole-sign chart/i)).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: /abhishek \(you\)/i })).toBeInTheDocument();
 });

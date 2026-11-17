@@ -17,19 +17,47 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import PlaceIcon from '@mui/icons-material/Place';
 import FamilyMemberCard from './FamilyMemberCard';
 import AppModal from './AppModal';
-import { loadFamilyMembers, saveFamilyMembers } from '../betaSession';
+import {
+  ensureMemberChart,
+  getFamilyOnly,
+  getSelfProfile,
+  persistFamilyMembers,
+} from '../lib/profiles';
+import { loadFamilyMembers } from '../betaSession';
+import { addReport } from '../lib/libraryStore';
 
-const RELATIONS = ['Self', 'Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'];
+const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'];
 
 const INITIAL_MEMBERS = [
-  { id: 1, name: 'John Doe', relation: 'Father', chartReady: true },
-  { id: 2, name: 'Jane Doe', relation: 'Mother', chartReady: true },
-  { id: 3, name: 'Alex Doe', relation: 'Brother', chartReady: false },
+  {
+    id: 1,
+    name: 'Ramesh Sharma',
+    relation: 'Father',
+    date: '1962-03-12',
+    time: '06:15',
+    place: 'Jaipur, Rajasthan, India',
+    chartReady: false,
+  },
+  {
+    id: 2,
+    name: 'Sunita Sharma',
+    relation: 'Mother',
+    date: '1965-11-02',
+    time: '09:40',
+    place: 'Jaipur, Rajasthan, India',
+    chartReady: false,
+  },
+  {
+    id: 3,
+    name: 'Aman Sharma',
+    relation: 'Brother',
+    chartReady: false,
+  },
 ];
 
 const EMPTY_FORM = {
   name: '',
-  relation: 'Self',
+  relation: 'Spouse',
   date: '',
   time: '',
   place: '',
@@ -39,15 +67,29 @@ const primaryButton = { bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } };
 const textButton = { color: '#5B3FA0' };
 
 function FamilyListPage() {
-  const [members, setMembers] = useState(() => loadFamilyMembers(INITIAL_MEMBERS));
+  const [members, setMembers] = useState(() => {
+    const stored = loadFamilyMembers(null);
+    const family = Array.isArray(stored)
+      ? getFamilyOnly()
+      : getFamilyOnly(INITIAL_MEMBERS).map((m) => ensureMemberChart(m));
+    if (!Array.isArray(stored)) {
+      persistFamilyMembers(family);
+    }
+    return [getSelfProfile(), ...family.map((m) => ensureMemberChart(m))];
+  });
 
   useEffect(() => {
-    saveFamilyMembers(members);
+    persistFamilyMembers(members.filter((m) => !m.isSelf));
   }, [members]);
+
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(EMPTY_FORM);
+
+  const refresh = (familyOnly) => {
+    setMembers([getSelfProfile(), ...familyOnly.map((m) => ensureMemberChart(m))]);
+  };
 
   const openWizard = () => {
     setEditing(null);
@@ -57,6 +99,7 @@ function FamilyListPage() {
   };
 
   const openEdit = (member) => {
+    if (member.isSelf) return;
     setEditing(member);
     setForm({
       name: member.name,
@@ -74,20 +117,52 @@ function FamilyListPage() {
   };
 
   const saveMember = () => {
-    if (editing) {
-      setMembers((current) =>
-        current.map((member) => (member.id === editing.id ? { ...member, ...form } : member))
-      );
-    } else {
-      setMembers((current) => [...current, { ...form, id: Date.now(), chartReady: true }]);
+    const withChart = ensureMemberChart({
+      ...(editing || {}),
+      ...form,
+      id: editing?.id || Date.now(),
+    });
+    if (withChart.chart) {
+      addReport({
+        title: `${withChart.name} · Lagna Kundali`,
+        memberId: String(withChart.id),
+        memberName: withChart.name,
+        kind: 'kundali',
+        summary: `Chart prepared for ${withChart.relation}.`,
+        source: 'family',
+      });
     }
+    const family = members.filter((m) => !m.isSelf);
+    const nextFamily = editing
+      ? family.map((member) => (member.id === editing.id ? withChart : member))
+      : [...family, withChart];
+    refresh(nextFamily);
     setWizardOpen(false);
   };
 
   const prepareChart = (member) => {
-    setMembers((current) =>
-      current.map((item) => (item.id === member.id ? { ...item, chartReady: true } : item))
-    );
+    if (member.isSelf) return;
+    const prepared = ensureMemberChart(member);
+    const nextFamily = members
+      .filter((m) => !m.isSelf)
+      .map((item) => (item.id === member.id ? prepared : item));
+    refresh(nextFamily);
+    if (prepared.chart) {
+      addReport({
+        title: `${prepared.name} · Lagna Kundali`,
+        memberId: String(prepared.id),
+        memberName: prepared.name,
+        kind: 'kundali',
+        summary: `Chart prepared for ${prepared.relation}.`,
+        source: 'family',
+      });
+    }
+  };
+
+  const deleteMember = (member) => {
+    if (member.isSelf) return;
+    const nextFamily = members.filter((m) => !m.isSelf && m.id !== member.id);
+    refresh(nextFamily);
   };
 
   const stepOneValid = form.name.trim().length > 0;
@@ -111,7 +186,7 @@ function FamilyListPage() {
               Family Members
             </Typography>
             <Typography sx={{ mt: 0.5, fontSize: 15, color: '#3A3550' }}>
-              Manage profiles and prepare a Kundali chart for every member.
+              You stay at the top. Add family profiles and prepare a Kundali for each.
             </Typography>
           </Box>
           <Button
@@ -125,7 +200,8 @@ function FamilyListPage() {
         </Box>
 
         <Alert severity="info" sx={{ mt: 2, bgcolor: '#EFE9F7', color: '#3A3550' }}>
-          Beta: family profiles stay on this device only. Sync and paid family seats come later.
+          Your own profile cannot be removed. Family charts appear under Kundali tabs once birth
+          details are saved.
         </Alert>
 
         <Box sx={{ mt: 3 }}>
@@ -135,6 +211,7 @@ function FamilyListPage() {
               member={member}
               onEdit={openEdit}
               onPrepare={prepareChart}
+              onDelete={deleteMember}
             />
           ))}
         </Box>

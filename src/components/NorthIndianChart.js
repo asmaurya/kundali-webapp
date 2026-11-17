@@ -110,8 +110,10 @@ function pointsAttr(points) {
  * North Indian whole-sign chart.
  * @param {{ houses: Array<{house:number,sign:string,planets:string[]}>, lagnaRashi?: number, lang?: 'en'|'hi' }} props
  */
-function NorthIndianChart({ houses = [], lagnaRashi = 1, lang = 'en' }) {
+function NorthIndianChart({ houses = [], lagnaRashi = 1, lang = 'en', ariaLabel }) {
   const short = PLANET_SHORT[lang] || PLANET_SHORT.en;
+  const label =
+    ariaLabel || (lang === 'hi' ? 'उत्तर भारतीय कुंडली' : 'North Indian natal chart');
 
   const cells = useMemo(() => {
     return Array.from({ length: 12 }, (_, index) => {
@@ -139,7 +141,7 @@ function NorthIndianChart({ houses = [], lagnaRashi = 1, lang = 'en' }) {
         borderRadius: 2,
         overflow: 'hidden',
       }}
-      aria-label={lang === 'hi' ? 'उत्तर भारतीय कुंडली' : 'North Indian natal chart'}
+      aria-label={label}
     >
       <svg viewBox="0 0 300 300" width="100%" height="100%" role="img">
         <rect x="0" y="0" width="300" height="300" fill="#FDFBFF" />

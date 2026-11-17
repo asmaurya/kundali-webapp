@@ -331,6 +331,7 @@ function vimshottariFromMoon(moonLon, birthDate) {
       lordName: DASHA_LORDS[idx],
       start: cursor.toISOString().slice(0, 10),
       end: end.toISOString().slice(0, 10),
+      level: 'maha',
     });
     cursor = end;
   }
@@ -339,6 +340,8 @@ function vimshottariFromMoon(moonLon, birthDate) {
     periods.find((p) => new Date(p.start) <= now && now < new Date(p.end)) || periods[0];
   return { system: 'vimshottari', current, periods };
 }
+
+export { DASHA_LORDS, DASHA_YEARS };
 
 /**
  * @param {{ date: string, time: string, place: string, lat?: number, lon?: number, tzOffsetHours?: number, countryCode?: string, placeId?: string }} birth

@@ -1,24 +1,58 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Button, Typography } from '@mui/material';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Box, Button, Tab, Tabs, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { getBirthDetails, getChart } from '../betaSession';
 import { useLocale } from '../i18n/LocaleContext';
+import { ensureMemberChart, listProfiles, persistFamilyMembers, SELF_ID } from '../lib/profiles';
+import { addReport } from '../lib/libraryStore';
 import NorthIndianChart from './NorthIndianChart';
+import ChartSecondaryPanel from './ChartSecondaryPanel';
+import DashaPanel from './DashaPanel';
 
 function KundaliChartPage({ onBack }) {
   const { t, locale } = useLocale();
-  const [chart, setChart] = useState(() => getChart());
-  const [birth, setBirth] = useState(() => getBirthDetails());
+  const [profiles, setProfiles] = useState(() => listProfiles());
+  const [activeId, setActiveId] = useState(SELF_ID);
 
   useEffect(() => {
-    setChart(getChart());
-    setBirth(getBirthDetails());
+    // Ensure family members with birth details have real charts available for tabs.
+    const nextFamily = listProfiles()
+      .filter((p) => !p.isSelf)
+      .map((member) => ensureMemberChart(member));
+    persistFamilyMembers(nextFamily);
+    setProfiles(listProfiles());
   }, []);
 
-  const houses = chart?.houses || [];
-  const subtitle = chart
-    ? `${birth?.place || '—'} • ${birth?.date || '—'} • ${birth?.time || '—'}`
-    : t('chartEmpty');
+  const active = useMemo(
+    () => profiles.find((p) => String(p.id) === String(activeId)) || profiles[0],
+    [profiles, activeId]
+  );
+
+  const chart = active?.isSelf ? active.chart : active?.chart || null;
+  const birthLabel = active
+    ? `${active.place || '—'} • ${active.date || '—'} • ${active.time || '—'}`
+    : '';
+
+  useEffect(() => {
+    if (chart && active) {
+      // Soft-touch: keep a kundali snapshot in the reports library per member.
+      // Deduping by title+member keeps noise down.
+    }
+  }, [chart, active]);
+
+  const onTabChange = (_event, value) => {
+    setActiveId(value);
+    const profile = profiles.find((p) => String(p.id) === String(value));
+    if (profile?.chart) {
+      addReport({
+        title: `${profile.name} · Lagna Kundali`,
+        memberId: String(profile.id),
+        memberName: profile.name,
+        kind: 'kundali',
+        summary: `Opened ${profile.relation} chart (${profile.chart.summary?.lagna || 'lagna'}).`,
+        source: 'kundali',
+      });
+    }
+  };
 
   return (
     <Box className="stack-page">
@@ -32,16 +66,57 @@ function KundaliChartPage({ onBack }) {
           {t('chartTitle')}
         </Typography>
         <Typography sx={{ mt: 0.5, fontSize: 15, color: '#3A3550' }}>
-          {t('chartSubtitle')} • {subtitle}
+          {t('chartSubtitle')}
         </Typography>
+
+        <Tabs
+          value={String(active?.id || SELF_ID)}
+          onChange={onTabChange}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{
+            mt: 2,
+            borderBottom: '1px solid #E6DEEF',
+            '& .MuiTab-root': { textTransform: 'none', minHeight: 44, fontWeight: 600 },
+            '& .Mui-selected': { color: '#5B3FA0' },
+            '& .MuiTabs-indicator': { bgcolor: '#5B3FA0' },
+          }}
+        >
+          {profiles.map((profile) => (
+            <Tab
+              key={profile.id}
+              value={String(profile.id)}
+              label={
+                profile.isSelf
+                  ? `${profile.name} (You)`
+                  : `${profile.name} · ${profile.relation}`
+              }
+            />
+          ))}
+        </Tabs>
 
         {!chart ? (
           <Box className="panel" sx={{ mt: 3 }}>
-            <Typography sx={{ color: '#4A4560' }}>{t('chartEmpty')}</Typography>
+            <Typography sx={{ color: '#4A4560' }}>
+              {active?.isSelf
+                ? t('chartEmpty')
+                : `${active?.name || 'This member'} does not have birth details yet. Add them on the Family page to prepare a chart.`}
+            </Typography>
           </Box>
         ) : (
           <Box sx={{ display: 'grid', gap: 3, mt: 3, gridTemplateColumns: { xs: '1fr', md: '420px 1fr' } }}>
-            <NorthIndianChart houses={houses} lagnaRashi={chart.lagna?.rashi || 1} lang={locale} />
+            <Box>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#6A6580', mb: 1 }}>
+                Lagna Kundali
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#4A4560', mb: 1.5 }}>{birthLabel}</Typography>
+              <NorthIndianChart
+                houses={chart.houses || []}
+                lagnaRashi={chart.lagna?.rashi || 1}
+                lang={locale}
+                ariaLabel="Lagna Kundali north Indian chart"
+              />
+            </Box>
 
             <Box sx={{ display: 'grid', gap: 2, alignContent: 'start' }}>
               <Box className="panel">
@@ -67,9 +142,15 @@ function KundaliChartPage({ onBack }) {
                 <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>{t('readingNotes')}</Typography>
                 <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
                   {t('readingNotesBody')}
-                  {chart.birth.place_approx ? t('placeApprox') : ''}.
+                  {chart.birth?.place_approx ? t('placeApprox') : ''}.
                 </Typography>
               </Box>
+
+              <DashaPanel chart={chart} />
+            </Box>
+
+            <Box sx={{ gridColumn: '1 / -1' }}>
+              <ChartSecondaryPanel chart={chart} lang={locale} />
             </Box>
           </Box>
         )}

@@ -17,6 +17,9 @@ import KundaliChartPage from './components/KundaliChartPage';
 import SubscriptionPage from './components/SubscriptionPage';
 import SupportPage from './components/SupportPage';
 import SettingsPage from './components/SettingsPage';
+import ReportsPage from './components/ReportsPage';
+import AstrologersPage from './components/AstrologersPage';
+import RemediesPage from './components/RemediesPage';
 import { ChatProvider, useChat } from './chatStore';
 import { LocaleProvider, useLocale } from './i18n/LocaleContext';
 import { fetchRemoteAccount, pushRemoteAccount } from './api';
@@ -32,6 +35,8 @@ import {
   saveBirthDetails,
   saveSession,
 } from './betaSession';
+import { ensureLibrarySeeds } from './lib/libraryStore';
+import { getSelfProfile } from './lib/profiles';
 
 const ONBOARDING_PATHS = new Set(['/splash', '/invite', '/birth-details', '/creating-chart']);
 const PUBLIC_PATHS = new Set(['/splash', '/invite']);
@@ -100,6 +105,9 @@ function AppShell() {
       '/subscription': t('navSubscription'),
       '/support': t('navSupport'),
       '/settings': t('navSettings'),
+      '/reports': 'Detailed Reports',
+      '/astrologers': 'Astrologers',
+      '/remedies': 'Remedies',
     }),
     [t]
   );
@@ -141,10 +149,16 @@ function AppShell() {
     }
   };
 
-  const handleNavigate = (path) => {
-    navigate(path);
+  const handleNavigate = (path, state) => {
+    navigate(path, state ? { state } : undefined);
     setDrawerOpen(false);
   };
+
+  useEffect(() => {
+    if (onboarded) {
+      ensureLibrarySeeds({ memberName: getSelfProfile().name });
+    }
+  }, [onboarded]);
 
   const handleLogout = useCallback(() => {
     clearBetaSession();
@@ -345,6 +359,33 @@ function AppShell() {
               element={
                 <RequireOnboarding>
                   <SettingsPage onBack={() => navigate('/')} />
+                </RequireOnboarding>
+              }
+            />
+            <Route
+              path="/reports"
+              element={
+                <RequireOnboarding>
+                  <ReportsPage onBack={() => navigate('/services')} />
+                </RequireOnboarding>
+              }
+            />
+            <Route
+              path="/astrologers"
+              element={
+                <RequireOnboarding>
+                  <AstrologersPage
+                    onBack={() => navigate('/services')}
+                    onOpenChat={() => navigate('/chat')}
+                  />
+                </RequireOnboarding>
+              }
+            />
+            <Route
+              path="/remedies"
+              element={
+                <RequireOnboarding>
+                  <RemediesPage onBack={() => navigate('/services')} />
                 </RequireOnboarding>
               }
             />

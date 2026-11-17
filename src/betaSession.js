@@ -12,6 +12,10 @@ export const STORAGE_KEYS = {
   activeId: 'kundali.beta.activeId',
   family: 'kundali.beta.family',
   settings: 'kundali.beta.settings',
+  reports: 'kundali.beta.reports',
+  remedies: 'kundali.beta.remedies',
+  ratings: 'kundali.beta.astrologerRatings',
+  lastUsed: 'kundali.beta.astrologerLastUsed',
 };
 
 function readJson(key, fallback = null) {
