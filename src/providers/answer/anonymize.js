@@ -1,17 +1,46 @@
 /**
- * Strip identity from text + chart context before any LLM / answer provider call.
- * Aligns with ARCHITECTURE §8.3 (names → relationship labels; no emails/phones/ids).
+ * Identity scrub for LLM payloads.
+ *
+ * Keep for Jyotish: birth date, time, place, lat/lon, chart placements, query text.
+ * Scrub only what links a reply to a real person: display names, emails, phones.
  */
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const PHONE_RE = /(?:\+?\d[\d\s\-()]{8,}\d)/g;
+/** Prefer +country / spaced groups; avoid eating ISO dates like 1962-03-12. */
+const PHONE_RE =
+  /(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)\d{3,5}[\s-]?\d{4,6}\b/g;
+const ISO_DATE_RE = /\b\d{4}-\d{2}-\d{2}\b/g;
+const CLOCK_RE = /\b\d{1,2}:\d{2}(?::\d{2})?\b/g;
+
+function protectJyotishStamps(text, store) {
+  return String(text || '')
+    .replace(ISO_DATE_RE, (match) => {
+      const token = `__JYOTISH_${store.length}__`;
+      store.push(match);
+      return token;
+    })
+    .replace(CLOCK_RE, (match) => {
+      const token = `__JYOTISH_${store.length}__`;
+      store.push(match);
+      return token;
+    });
+}
+
+function restoreJyotishStamps(text, store) {
+  let out = text;
+  store.forEach((value, index) => {
+    out = out.replace(`__JYOTISH_${index}__`, value);
+  });
+  return out;
+}
 
 /**
  * @param {string} text
  * @param {{ selfName?: string, family?: Array<{name:string,relation:string}> }} [people]
  */
 export function anonymizeText(text, people = {}) {
-  let out = String(text || '');
+  const stamps = [];
+  let out = protectJyotishStamps(text, stamps);
   out = out.replace(EMAIL_RE, '[email]');
   out = out.replace(PHONE_RE, '[phone]');
 
@@ -40,15 +69,16 @@ export function anonymizeText(text, people = {}) {
       out = out.replace(new RegExp(`@${escaped}`, 'gi'), to);
     });
 
-  return out;
+  return restoreJyotishStamps(out, stamps);
 }
 
-/** Chart prompt context without birth place string / coords that identify a home. */
+/**
+ * Chart / birth context for the model.
+ * Does NOT redact place, time, date, or coordinates — those are required for Jyotish.
+ * Names in the blob should already be handled via anonymizeText(..., people).
+ */
 export function anonymizeChartContext(chartContext) {
-  let out = String(chartContext || '');
-  out = out.replace(/^Birth place:.*$/gim, 'Birth place: [redacted]');
-  out = out.replace(/\b(?:lat|lon|longitude|latitude)\s*[:=]\s*-?\d+(\.\d+)?/gi, '[coords]');
-  return out;
+  return String(chartContext || '');
 }
 
 export function makeAnonymousRequestId() {

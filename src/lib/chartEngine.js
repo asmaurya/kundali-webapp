@@ -460,7 +460,16 @@ export function generateChart(birth) {
 
 export function chartContextForPrompt(chart) {
   if (!chart) return 'No chart available.';
+  const birth = chart.birth || {};
   const lines = [
+    // Birth stamp stays for Jyotish; personal names are stripped elsewhere.
+    birth.date || birth.time || birth.place
+      ? `Birth: ${birth.date || '?'} ${birth.time || '?'} at ${birth.place || '?'}${
+          birth.lat != null && birth.lon != null
+            ? ` (lat ${birth.lat}, lon ${birth.lon}${birth.tz ? `, ${birth.tz}` : ''})`
+            : ''
+        }`
+      : null,
     `Lagna: ${chart.summary.lagna}`,
     `Moon: ${chart.summary.moonSign} (${chart.summary.nakshatra})`,
     `Current dasha: ${chart.summary.currentDasha}`,
@@ -469,6 +478,6 @@ export function chartContextForPrompt(chart) {
       (g) =>
         `- ${g.name}: ${g.rashiName} ${g.degree}°, house ${g.house}, ${g.nakshatraName} pada ${g.pada}`
     ),
-  ];
+  ].filter(Boolean);
   return lines.join('\n');
 }

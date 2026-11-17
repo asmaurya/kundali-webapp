@@ -24,14 +24,15 @@ Swapping OpenAI / Claude / a private model = new `AnswerProvider` adapter only. 
 
 ## Anonymisation
 
-Before any provider call (`anonymize.js`):
+Before any provider call (`anonymize.js`) — **names only**, so the model cannot link answers to a real person:
 
-- Emails / phones → `[email]` / `[phone]`
 - Self name → `the querent`
 - Family names → `the querent's {relation}`
-- Birth place line in chart context → `[redacted]`
+- Emails / phones → `[email]` / `[phone]` (not needed for Jyotish)
 
-Canonical charts and chats stay identified **on-device / in our account store**; only the outbound LLM payload is scrubbed.
+**Not redacted** (required for Jyotish): birth date, time, place, lat/lon/tz, full chart placements, and the user’s query text (aside from embedded names).
+
+Canonical charts and chats stay identified **on-device / in our account store**; the outbound LLM payload drops personal names only.
 
 ## Billing — when to implement what
 
