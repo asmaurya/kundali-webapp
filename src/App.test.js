@@ -74,6 +74,32 @@ beforeEach(() => {
         },
       };
     }
+    if (url.includes('/api/admin/llm')) {
+      return {
+        ok: true,
+        async json() {
+          return {
+            ok: true,
+            lab: {
+              masterPrompt: '',
+              provider: 'nvidia',
+              baseUrl: 'https://integrate.api.nvidia.com/v1',
+              model: 'nvidia/nemotron-3.5-bolt-e4b',
+              apiKeySet: true,
+              apiKeyMasked: '•••• env secret',
+              temperature: 0.4,
+              topP: 1,
+              frequencyPenalty: 0,
+              presencePenalty: 0,
+              maxTokens: 280,
+              captureThinking: true,
+              showThinking: false,
+              defaults: { masterPrompt: 'Ground every answer…' },
+            },
+          };
+        },
+      };
+    }
     if (url.includes('/api/places/autocomplete')) {
       return {
         ok: true,
@@ -337,6 +363,27 @@ test('settings page can switch language to Hindi', async () => {
   await waitFor(() => {
     expect(screen.getByRole('heading', { name: 'सेटिंग्स' })).toBeInTheDocument();
   });
+});
+
+test('LLM lab is reachable from settings', async () => {
+  renderApp('/settings');
+  fireEvent.click(screen.getByRole('button', { name: /open llm lab/i }));
+  await waitFor(() => {
+    expect(screen.getByRole('heading', { name: /llm lab/i })).toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /save llm settings/i })).toBeInTheDocument();
+  });
+  expect(screen.getByRole('button', { name: /reset defaults/i })).toBeInTheDocument();
+});
+
+test('astrologers marketplace shows recommendations tab and topic filters', () => {
+  renderApp('/astrologers');
+  expect(screen.getByRole('heading', { name: /chat with an astrologer/i })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: /recommendations/i })).toBeInTheDocument();
+  const topicFilters = screen.getByRole('group', { name: /topic filter/i });
+  expect(within(topicFilters).getByRole('button', { name: /^career$/i })).toBeInTheDocument();
+  expect(screen.getByPlaceholderText(/search jyotish/i)).toBeInTheDocument();
 });
 
 test('kundali page shows the North Indian diamond chart when a chart exists', () => {

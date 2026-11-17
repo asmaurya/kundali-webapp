@@ -67,6 +67,7 @@ export const ASTROLOGERS = {
     accent: '#2F6B52',
     tint: '#EDF4F0',
     speciality: 'Vedic astrology • Career • Remedies',
+    topics: ['career', 'remedies', 'timing'],
     oneLiner: 'Steady career and Saturn-period guidance with practical remedies.',
     description: '18 years of practice. Specialises in career direction, Saturn transits and remedial measures.',
     price: '₹499 / 30 min',
@@ -81,6 +82,7 @@ export const ASTROLOGERS = {
     accent: '#9A4A63',
     tint: '#FAEEF2',
     speciality: 'Vedic astrology • Relationships • Marriage',
+    topics: ['relationship', 'timing'],
     oneLiner: 'Marriage timing and family-chart readings with a gentle voice.',
     description: 'Specialises in compatibility, marriage timing and family consultations.',
     price: '₹399 / 30 min',
@@ -95,6 +97,7 @@ export const ASTROLOGERS = {
     accent: '#8A6A2F',
     tint: '#F9F3E6',
     speciality: 'Numerology • Health • Career',
+    topics: ['health', 'career', 'finance'],
     oneLiner: 'Health and life-path insights blending Vedic chart with numbers.',
     description: 'Works with numerology and health indications alongside classical Vedic charts.',
     price: '₹449 / 30 min',
@@ -117,6 +120,8 @@ const demoConversations = [
     astrologerId: 'astro-chat',
     title: 'Career transition guidance',
     updated: 'Just now',
+    executiveSummary:
+      'Querent feels stuck at work. Guidance: Saturn aspect on the 10th favours durable, gradual progress over abrupt moves; remedies or a live consult were offered as next steps.',
     messages: [
       { role: 'bot', text: GREETING },
       { role: 'user', text: 'I am feeling stuck in my career. Can you guide me?' },
@@ -373,10 +378,7 @@ export function ChatProvider({ children }) {
             ? {
                 ...c,
                 executiveSummary: summary,
-                messages: [
-                  ...c.messages,
-                  { role: 'bot', text: `Executive summary\n\n${summary}`, kind: 'summary' },
-                ],
+                summaryUpdatedAt: new Date().toISOString(),
                 updated: 'Just now',
               }
             : c

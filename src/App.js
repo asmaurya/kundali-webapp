@@ -17,6 +17,7 @@ import KundaliChartPage from './components/KundaliChartPage';
 import SubscriptionPage from './components/SubscriptionPage';
 import SupportPage from './components/SupportPage';
 import SettingsPage from './components/SettingsPage';
+import LlmLabPage from './components/LlmLabPage';
 import ReportsPage from './components/ReportsPage';
 import AstrologersPage from './components/AstrologersPage';
 import RemediesPage from './components/RemediesPage';
@@ -106,6 +107,7 @@ function AppShell() {
       '/subscription': t('navSubscription'),
       '/support': t('navSupport'),
       '/settings': t('navSettings'),
+      '/settings/llm': 'LLM Lab',
       '/reports': 'Detailed Reports',
       '/astrologers': 'Astrologers',
       '/remedies': 'Remedies',
@@ -355,6 +357,14 @@ function AppShell() {
               element={
                 <RequireOnboarding>
                   <SettingsPage onBack={() => navigate('/')} />
+                </RequireOnboarding>
+              }
+            />
+            <Route
+              path="/settings/llm"
+              element={
+                <RequireOnboarding>
+                  <LlmLabPage onBack={() => navigate('/settings')} />
                 </RequireOnboarding>
               }
             />

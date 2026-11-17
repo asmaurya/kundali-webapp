@@ -1,9 +1,12 @@
 import React from 'react';
 import { Box, Button, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import TuneIcon from '@mui/icons-material/Tune';
+import { useNavigate } from 'react-router-dom';
 import { useLocale } from '../i18n/LocaleContext';
 
 function SettingsPage({ onBack }) {
+  const navigate = useNavigate();
   const { locale, setLocale, t, locales, syncStatus } = useLocale();
 
   const statusLabel =
@@ -61,6 +64,21 @@ function SettingsPage({ onBack }) {
           </ToggleButtonGroup>
 
           <Typography sx={{ mt: 2, fontSize: 13, color: '#6A6580' }}>{statusLabel}</Typography>
+        </Box>
+
+        <Box className="panel" sx={{ mt: 2.5 }}>
+          <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>LLM Lab</Typography>
+          <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
+            Edit the master chat prompt, choose provider and model, capture thinking separately, and
+            tweak temperature and related parameters.
+          </Typography>
+          <Button
+            startIcon={<TuneIcon />}
+            onClick={() => navigate('/settings/llm')}
+            sx={{ mt: 2, textTransform: 'none', color: '#5B3FA0' }}
+          >
+            Open LLM Lab
+          </Button>
         </Box>
       </Box>
     </Box>

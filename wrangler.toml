@@ -5,6 +5,7 @@
 #                      NVIDIA NIM: https://integrate.api.nvidia.com/v1
 #   OPENAI_MODEL — NIM / OpenAI model id
 #   MASTER_PROMPT — optional text appended to every LLM system prompt (Worker-only)
+#   ADMIN_TOKEN — optional gate for /api/admin/llm (LLM Lab). If unset, any beta session can edit.
 #   GOOGLE_PLACES_API_KEY — Google Places + Time Zone (Nominatim fallback if unset)
 #   BETA_INVITE_CODE — override invite code server-side
 #   CHART_API_URL — Vercel chart API origin (https://….vercel.app)
@@ -19,7 +20,7 @@ compatibility_date = "2025-11-01"
 [vars]
 OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
 OPENAI_MODEL = "nvidia/nemotron-3.5-bolt-e4b"
-WORKER_BUILD = "swiss-chart-vercel-live"
+WORKER_BUILD = "chat-summary-llm-lab"
 CHART_API_URL = "https://kundali-chart-api.vercel.app"
 # Override in dashboard or via `wrangler secret put MASTER_PROMPT` for a longer prompt.
 MASTER_PROMPT = "Ground every answer in the querent kundali JSON provided in context. When a family kundali JSON is also present, compare both charts and state which placements support the reading. Prefer precise Jyotish references (lagna, houses, grahas, dasha) over generic advice."

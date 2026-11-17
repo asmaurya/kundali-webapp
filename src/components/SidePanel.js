@@ -167,26 +167,49 @@ function SidePanel({
         <Box className="side-panel__section">{t('recentChats')}</Box>
         {recent.map((conversation) => {
           const astrologer = ASTROLOGERS[conversation.astrologerId];
+          const offline = astrologer?.type === 'live' && !astrologer.online;
           return (
-            <button
-              type="button"
+            <Tooltip
               key={conversation.id}
-              className="side-panel__chat"
-              onClick={() => openChat(conversation.id)}
+              title={
+                conversation.executiveSummary
+                  ? `Summary: ${conversation.executiveSummary}`
+                  : offline
+                    ? `${astrologer.name} is offline`
+                    : conversation.title
+              }
+              placement="right"
+              enterDelay={400}
+              describeChild
             >
-              <Box
-                className="side-panel__chat-avatar"
-                style={{ backgroundColor: astrologer.tint, color: astrologer.accent, borderColor: `${astrologer.accent}33` }}
+              <button
+                type="button"
+                className="side-panel__chat"
+                onClick={() => openChat(conversation.id)}
+                aria-label={conversation.title}
               >
-                {astrologer.initials}
-              </Box>
-              <Box sx={{ minWidth: 0 }}>
-                <Box className="side-panel__chat-title">{conversation.title}</Box>
-                <Box className="side-panel__chat-meta">
-                  {astrologer.name} · {conversation.updated}
+                <Box
+                  className="side-panel__chat-avatar"
+                  style={{ backgroundColor: astrologer.tint, color: astrologer.accent, borderColor: `${astrologer.accent}33` }}
+                >
+                  {astrologer.initials}
                 </Box>
-              </Box>
-            </button>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Box className="side-panel__chat-title">{conversation.title}</Box>
+                  <Box className="side-panel__chat-meta">
+                    {astrologer.name}
+                    {offline ? ' · Offline' : ''} · {conversation.updated}
+                  </Box>
+                </Box>
+                {astrologer?.type === 'live' && (
+                  <Box
+                    component="span"
+                    className={`presence-dot${astrologer.online ? ' presence-dot--online' : ''}`}
+                    title={astrologer.online ? 'Online' : 'Offline'}
+                  />
+                )}
+              </button>
+            </Tooltip>
           );
         })}
 
@@ -204,18 +227,26 @@ function SidePanel({
             >
               {astrologer.initials}
             </Box>
-            <Box sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
               <Box className="side-panel__chat-title" style={{ color: astrologer.accent }}>
                 {astrologer.name}
                 {astrologer.type === 'live' && (
                   <VerifiedIcon sx={{ ml: 0.5, fontSize: 14, color: '#6B4FA0', verticalAlign: '-2px' }} />
                 )}
               </Box>
-              <Box className="side-panel__chat-meta">{astrologer.speciality}</Box>
+              <Box className="side-panel__chat-meta">
+                {astrologer.type === 'live' && !astrologer.online
+                  ? `Offline · ${astrologer.speciality}`
+                  : astrologer.online
+                    ? `Online · ${astrologer.speciality}`
+                    : astrologer.speciality}
+              </Box>
             </Box>
             <Box
               component="span"
               className={`presence-dot${astrologer.online ? ' presence-dot--online' : ''}`}
+              title={astrologer.online ? 'Online' : 'Offline'}
+              aria-label={astrologer.online ? 'Online' : 'Offline'}
             />
           </button>
         ))}

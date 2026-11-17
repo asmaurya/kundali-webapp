@@ -3,6 +3,7 @@ import {
   Box,
   Button,
   IconButton,
+  Popover,
   Snackbar,
   Tooltip,
   Typography,
@@ -11,6 +12,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import AddIcon from '@mui/icons-material/Add';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SendIcon from '@mui/icons-material/Send';
 import SummarizeOutlinedIcon from '@mui/icons-material/SummarizeOutlined';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
@@ -45,6 +47,7 @@ function ChatInterface() {
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [summarizing, setSummarizing] = useState(false);
+  const [summaryAnchor, setSummaryAnchor] = useState(null);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const inputRef = useRef(null);
   const requested = location.state && location.state.astrologerId;
@@ -152,6 +155,19 @@ function ChatInterface() {
     }
   };
 
+  const openSummaryInfo = async (event) => {
+    if (!active) return;
+    setSummaryAnchor(event.currentTarget);
+    if (!active.executiveSummary && !summarizing) {
+      setSummarizing(true);
+      try {
+        await requestExecutiveSummary(active.id);
+      } finally {
+        setSummarizing(false);
+      }
+    }
+  };
+
   if (!active) {
     return (
       <Box className="chat-page" sx={{ p: 4 }}>
@@ -196,25 +212,53 @@ function ChatInterface() {
               <span className="chats-group__name" style={{ color: group.astrologer.accent }}>
                 {group.astrologer.name}
               </span>
+              {group.astrologer.type === 'live' && (
+                <span
+                  className={`presence-dot${group.astrologer.online ? ' presence-dot--online' : ''}`}
+                  title={group.astrologer.online ? 'Online' : 'Offline'}
+                  aria-label={group.astrologer.online ? 'Online' : 'Offline'}
+                  style={{ marginLeft: 'auto' }}
+                />
+              )}
             </Box>
-            {group.chats.length === 0 && (
+            {group.astrologer.type === 'live' && !group.astrologer.online && (
+              <Box className="chats-group__empty" style={{ color: '#8A6212' }}>
+                Currently unavailable
+              </Box>
+            )}
+            {group.chats.length === 0 && group.astrologer.online !== false && (
               <Box className="chats-group__empty">No conversations yet</Box>
             )}
             {group.chats.map((conversation) => (
-              <button
-                type="button"
+              <Tooltip
                 key={conversation.id}
-                className={`chat-item${conversation.id === active.id ? ' chat-item--active' : ''}`}
-                onClick={() => openConversation(conversation.id)}
-                style={
-                  conversation.id === active.id
-                    ? { boxShadow: `inset 2px 0 0 ${group.astrologer.accent}` }
-                    : undefined
+                title={
+                  conversation.executiveSummary
+                    ? `Summary: ${conversation.executiveSummary}`
+                    : 'No executive summary yet — open the chat and tap the info icon.'
                 }
+                placement="right"
+                enterDelay={400}
+                describeChild
               >
-                <span className="chat-item__title">{conversation.title}</span>
-                <span className="chat-item__meta">{conversation.updated}</span>
-              </button>
+                <button
+                  type="button"
+                  className={`chat-item${conversation.id === active.id ? ' chat-item--active' : ''}`}
+                  onClick={() => openConversation(conversation.id)}
+                  aria-label={conversation.title}
+                  style={
+                    conversation.id === active.id
+                      ? { boxShadow: `inset 2px 0 0 ${group.astrologer.accent}` }
+                      : undefined
+                  }
+                >
+                  <span className="chat-item__title">{conversation.title}</span>
+                  <span className="chat-item__meta">
+                    {conversation.updated}
+                    {group.astrologer.type === 'live' && !group.astrologer.online ? ' · Offline' : ''}
+                  </span>
+                </button>
+              </Tooltip>
             ))}
           </Box>
         ))}
@@ -252,12 +296,13 @@ function ChatInterface() {
               <span>
                 <IconButton
                   size="small"
-                  aria-label="Generate executive summary"
-                  onClick={onSummary}
+                  aria-label="Executive summary"
+                  aria-describedby={summaryAnchor ? 'executive-summary-popover' : undefined}
+                  onClick={openSummaryInfo}
                   disabled={summarizing}
                   sx={{ color: '#5B3FA0' }}
                 >
-                  <SummarizeOutlinedIcon fontSize="small" />
+                  <InfoOutlinedIcon fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
@@ -285,6 +330,44 @@ function ChatInterface() {
             </Tooltip>
           </Box>
         </header>
+
+        <Popover
+          id="executive-summary-popover"
+          open={Boolean(summaryAnchor)}
+          anchorEl={summaryAnchor}
+          onClose={() => setSummaryAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{
+            paper: {
+              sx: {
+                maxWidth: 360,
+                p: 2,
+                border: '1px solid #E6DEEF',
+                boxShadow: '0 8px 24px rgba(30, 27, 46, 0.12)',
+              },
+            },
+          }}
+        >
+          <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1E1B2E', mb: 0.75 }}>
+            Executive summary
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: '#3A3550', lineHeight: 1.5 }}>
+            {summarizing
+              ? 'Preparing a brief summary of this conversation…'
+              : active?.executiveSummary ||
+                'No summary yet. Tap Refresh once the chat has a few turns.'}
+          </Typography>
+          <Button
+            size="small"
+            startIcon={<SummarizeOutlinedIcon fontSize="small" />}
+            onClick={onSummary}
+            disabled={summarizing}
+            sx={{ mt: 1.25, textTransform: 'none', color: '#5B3FA0' }}
+          >
+            {active?.executiveSummary ? 'Refresh summary' : 'Generate summary'}
+          </Button>
+        </Popover>
 
         {handoffOpen && astrologer.type === 'ai' && (
           <Box
