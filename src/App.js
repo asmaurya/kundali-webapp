@@ -219,12 +219,6 @@ function AppShell() {
     [navigate, startChat]
   );
 
-  const handleNewChat = () => {
-    startChat('astro-chat');
-    navigate('/chat');
-    setDrawerOpen(false);
-  };
-
   const handleSplashNext = () => {
     if (!isInvited()) {
       navigate('/invite');
@@ -268,7 +262,7 @@ function AppShell() {
           <AppHeader
             title={title}
             onMenuClick={handleMenuClick}
-            newChat={isChatPage ? handleNewChat : null}
+            newChat={null}
           />
         )}
         {showChrome && <LowBalanceBanner />}

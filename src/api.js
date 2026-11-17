@@ -44,6 +44,41 @@ export function createChart(birthDetails) {
  * Ask the AnswerProvider with anonymisation + rolling context.
  * Returns `{ text, provider, used_llm, usage, warning? }` for chatStore.
  */
+/** Ask the LLM for a short chat title (3–6 words). */
+export async function suggestChatTitle({ question, reply, history = [] }) {
+  const result = await askWithPrivacy({
+    question: `Propose a concise chat title (3 to 6 words, Title Case, no quotes) for this astrology conversation. Question: ${question}. Reply excerpt: ${String(reply || '').slice(0, 180)}`,
+    chartContext: 'Title helper only — ignore chart detail.',
+    messages: history.slice(-4),
+    locale: 'en',
+    people: {},
+    modelTier: 'flash',
+  });
+  const raw = String(result.answer || '')
+    .replace(/^["'\s]+|["'\s]+$/g, '')
+    .split('\n')[0]
+    .trim();
+  if (!raw || raw.length > 60) return '';
+  return raw;
+}
+
+/** Executive summary of a conversation for the user or a human handoff. */
+export async function summarizeConversation({ messages = [], chart }) {
+  const transcript = messages
+    .slice(-16)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Astrologer'}: ${m.text}`)
+    .join('\n');
+  const result = await askWithPrivacy({
+    question: `Write an executive summary (max 120 words) of this astrology chat for a human reader. Cover topics asked and guidance given. Transcript:\n${transcript}`,
+    chartContext: buildLlmChartContext({ querentChart: chart }),
+    messages: [],
+    locale: 'en',
+    people: {},
+    modelTier: 'flash',
+  });
+  return String(result.answer || '').trim();
+}
+
 export async function askOracle({
   question,
   chart,

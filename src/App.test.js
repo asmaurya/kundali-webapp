@@ -137,9 +137,9 @@ test('several conversations are filed under each astrologer', () => {
   expect(within(history).getByText('Marriage timing')).toBeInTheDocument();
 });
 
-test('the chat history rail can start another chat with the same astrologer', () => {
+test('the chat history rail can start another chat with the AI astrologer', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByLabelText(/new chat with astro chat/i));
+  fireEvent.click(screen.getByLabelText(/^new chat$/i));
   const history = screen.getByRole('complementary', { name: /chat history/i });
   expect(within(history).getByText('New chat')).toBeInTheDocument();
   expect(within(conversation()).getByText('Astro Chat')).toBeInTheDocument();
@@ -147,7 +147,7 @@ test('the chat history rail can start another chat with the same astrologer', ()
 
 test('a new chat defaults to the AI astrologer', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByRole('button', { name: /^new chat$/i }));
+  fireEvent.click(screen.getByLabelText(/^new chat$/i));
   expect(within(conversation()).getByText('Astro Chat')).toBeInTheDocument();
   expect(within(conversation()).queryByText(/book live session/i)).not.toBeInTheDocument();
 });
@@ -204,7 +204,7 @@ test('kundali page back link returns to the chat home page', () => {
 
 test('a live astrologer conversation is not blank and offers a live session', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByLabelText(/new chat with acharya rajiv sharma/i));
+  fireEvent.click(screen.getByRole('button', { name: /remedies for saturn transit/i }));
   const region = conversation();
   expect(within(region).getByText('Acharya Rajiv Sharma')).toBeInTheDocument();
   expect(within(region).getByRole('button', { name: /book live session/i })).toBeInTheDocument();

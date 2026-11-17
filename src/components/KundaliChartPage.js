@@ -179,6 +179,11 @@ function KundaliChartPage({ onBack }) {
                   {t('readingNotesBody')}
                   {chart.birth?.place_approx ? t('placeApprox') : ''}.
                 </Typography>
+                <Typography sx={{ mt: 1.5, fontSize: 13, color: '#4A4560' }}>
+                  Current dasha: <strong>{chart.summary?.currentDasha || '—'}</strong>. Dasha periods
+                  are tendencies, not verdicts — not every dasha is “bad”. Ask an astrologer how this
+                  period sits in your full chart.
+                </Typography>
               </Box>
 
               <DashaPanel chart={chart} />

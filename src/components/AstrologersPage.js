@@ -1,12 +1,16 @@
 import React, { useMemo, useState } from 'react';
-import { Box, Button, Rating, Typography } from '@mui/material';
+import { Box, Button, Chip, Rating, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import { ASTROLOGERS, useChat } from '../chatStore';
 import {
+  astrologerTagOptions,
+  getAstrologerAverage,
   loadAstrologerLastUsed,
   loadAstrologerRatings,
+  loadAstrologerTags,
   setAstrologerRating,
+  toggleAstrologerTag,
 } from '../lib/libraryStore';
 
 function formatRelative(iso) {
@@ -25,7 +29,9 @@ function formatRelative(iso) {
 function AstrologersPage({ onBack, onOpenChat }) {
   const { startChat } = useChat();
   const [ratings, setRatings] = useState(() => loadAstrologerRatings());
+  const [tags, setTags] = useState(() => loadAstrologerTags());
   const lastUsed = loadAstrologerLastUsed();
+  const tagOptions = astrologerTagOptions();
 
   const people = useMemo(
     () =>
@@ -56,7 +62,7 @@ function AstrologersPage({ onBack, onOpenChat }) {
           Chat with an Astrologer
         </Typography>
         <Typography sx={{ mt: 0.5, fontSize: 15, color: '#3A3550' }}>
-          Verified human readers. Rate them privately for your own reference.
+          Tag readers privately by topic. Overall score averages community + your ratings.
         </Typography>
 
         <Box
@@ -71,74 +77,126 @@ function AstrologersPage({ onBack, onOpenChat }) {
             },
           }}
         >
-          {people.map((person) => (
-            <Box
-              key={person.id}
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                aspectRatio: { sm: '1 / 1.05' },
-                p: 2.5,
-                bgcolor: '#FFFFFF',
-                border: '1px solid #E6DEEF',
-                borderRadius: 3,
-                minHeight: 280,
-              }}
-            >
+          {people.map((person) => {
+            const average = getAstrologerAverage(person.id);
+            const myTags = tags[person.id] || [];
+            return (
               <Box
+                key={person.id}
                 sx={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 2,
-                  display: 'grid',
-                  placeItems: 'center',
-                  fontWeight: 700,
-                  fontSize: 20,
-                  bgcolor: person.tint,
-                  color: person.accent,
-                  border: `1px solid ${person.accent}33`,
-                  mb: 1.5,
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  aspectRatio: { sm: '1 / 1.05' },
+                  p: 2.5,
+                  bgcolor: '#FFFFFF',
+                  border: '1px solid #E6DEEF',
+                  borderRadius: 3,
+                  minHeight: 300,
                 }}
               >
-                {person.initials}
-              </Box>
-
-              <Typography sx={{ fontWeight: 700, color: person.accent, lineHeight: 1.3 }}>
-                {person.name}
-                <VerifiedIcon sx={{ ml: 0.5, fontSize: 16, color: '#6B4FA0', verticalAlign: '-2px' }} />
-              </Typography>
-              <Typography sx={{ mt: 0.75, fontSize: 14, color: '#3A3550', flexGrow: 1 }}>
-                {person.oneLiner}
-              </Typography>
-              <Typography sx={{ mt: 1, fontSize: 12, color: '#6A6580' }}>
-                {person.online ? 'Online now' : 'Offline'} · {person.price}
-              </Typography>
-              <Typography sx={{ mt: 0.35, fontSize: 12, color: '#8A849E' }}>
-                {formatRelative(lastUsed[person.id])}
-              </Typography>
-              <Box sx={{ mt: 1.25, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography sx={{ fontSize: 12, color: '#6A6580' }}>Your rating</Typography>
-                <Rating
-                  size="small"
-                  value={Number(ratings[person.id]?.rating || 0)}
-                  onChange={(_e, value) => {
-                    if (!value) return;
-                    setAstrologerRating(person.id, value);
-                    setRatings(loadAstrologerRatings());
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 12,
+                    right: 12,
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    display: 'grid',
+                    placeItems: 'center',
+                    bgcolor: '#EFE9F7',
+                    border: '1px solid #CFC4EA',
+                    color: '#5B3FA0',
+                    fontWeight: 700,
+                    fontSize: 13,
                   }}
-                />
+                  title="Overall rating out of 5"
+                  aria-label={`Overall rating ${average} out of 5`}
+                >
+                  {average}
+                </Box>
+
+                <Box
+                  sx={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 2,
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontWeight: 700,
+                    fontSize: 20,
+                    bgcolor: person.tint,
+                    color: person.accent,
+                    border: `1px solid ${person.accent}33`,
+                    mb: 1.5,
+                  }}
+                >
+                  {person.initials}
+                </Box>
+
+                <Typography sx={{ fontWeight: 700, color: person.accent, lineHeight: 1.3, pr: 5 }}>
+                  {person.name}
+                  <VerifiedIcon sx={{ ml: 0.5, fontSize: 16, color: '#6B4FA0', verticalAlign: '-2px' }} />
+                </Typography>
+                <Typography sx={{ mt: 0.75, fontSize: 14, color: '#3A3550', flexGrow: 1 }}>
+                  {person.oneLiner}
+                </Typography>
+                <Typography sx={{ mt: 1, fontSize: 12, color: '#6A6580' }}>
+                  {person.online ? 'Online now' : 'Offline'} · {person.price}
+                </Typography>
+                <Typography sx={{ mt: 0.35, fontSize: 12, color: '#8A849E' }}>
+                  {formatRelative(lastUsed[person.id])}
+                </Typography>
+
+                <Box sx={{ mt: 1.25, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {tagOptions.map((tag) => {
+                    const on = myTags.includes(tag);
+                    return (
+                      <Chip
+                        key={tag}
+                        size="small"
+                        label={tag}
+                        onClick={() => {
+                          toggleAstrologerTag(person.id, tag);
+                          setTags(loadAstrologerTags());
+                        }}
+                        sx={{
+                          textTransform: 'capitalize',
+                          bgcolor: on ? '#EFE9F7' : '#F7F4FB',
+                          color: on ? '#5B3FA0' : '#6A6580',
+                          border: on ? '1px solid #5B3FA0' : '1px solid #E6DEEF',
+                          height: 24,
+                        }}
+                      />
+                    );
+                  })}
+                </Box>
+
+                <Box sx={{ mt: 1.25, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontSize: 12, color: '#6A6580' }}>Your rating</Typography>
+                  <Rating
+                    size="small"
+                    value={Number(ratings[person.id]?.rating || 0)}
+                    onChange={(_e, value) => {
+                      if (!value) return;
+                      setAstrologerRating(person.id, value);
+                      setRatings(loadAstrologerRatings());
+                    }}
+                  />
+                </Box>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={() => open(person.id)}
+                  disabled={!person.online}
+                  sx={{ mt: 2, bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
+                >
+                  {person.online ? 'Chat' : 'Unavailable'}
+                </Button>
               </Box>
-              <Button
-                fullWidth
-                variant="contained"
-                onClick={() => open(person.id)}
-                disabled={!person.online}
-                sx={{ mt: 2, bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
-              >
-                {person.online ? 'Chat' : 'Unavailable'}
-              </Button>
-            </Box>
-          ))}
+            );
+          })}
         </Box>
       </Box>
     </Box>
