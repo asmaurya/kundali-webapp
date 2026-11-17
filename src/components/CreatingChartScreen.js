@@ -39,8 +39,11 @@ function CreatingChartScreen({ onNext }) {
     (async () => {
       try {
         await new Promise((resolve) => setTimeout(resolve, 50));
-        const chart = createChart(birth);
+        const chart = await createChart(birth);
         if (cancelled) return;
+        if (!chart?.lagna) {
+          throw new Error('Chart engine returned an incomplete kundali.');
+        }
 
         saveChart(chart);
         const session = getSession();

@@ -4,6 +4,7 @@ import { CHART_PROVIDER_IDS } from './types';
 
 /**
  * Prefer Swiss Ephemeris via Worker/Vercel; fall back to local astronomy-engine.
+ * Skips a separate health round-trip — try remote with timeout, then local.
  */
 export function createHybridChartProvider({
   remote = createRemoteChartProvider(),
@@ -13,10 +14,6 @@ export function createHybridChartProvider({
     id: CHART_PROVIDER_IDS.hybrid,
     async computeNatal(birth) {
       try {
-        const health = remote.health ? await remote.health() : { ok: true };
-        if (health.ok === false) {
-          return local.computeNatal(birth);
-        }
         return await remote.computeNatal(birth);
       } catch {
         return local.computeNatal(birth);

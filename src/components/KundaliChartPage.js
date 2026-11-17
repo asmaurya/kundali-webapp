@@ -43,11 +43,17 @@ function KundaliChartPage({ onBack }) {
   const [labelMode, setLabelMode] = useState('planet');
 
   useEffect(() => {
-    const nextFamily = listProfiles()
-      .filter((p) => !p.isSelf)
-      .map((member) => ensureMemberChart(member));
-    persistFamilyMembers(nextFamily);
-    setProfiles(listProfiles());
+    let cancelled = false;
+    (async () => {
+      const family = listProfiles().filter((p) => !p.isSelf);
+      const nextFamily = await Promise.all(family.map((member) => ensureMemberChart(member)));
+      if (cancelled) return;
+      persistFamilyMembers(nextFamily);
+      setProfiles(listProfiles());
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const active = useMemo(

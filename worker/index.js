@@ -63,6 +63,7 @@ async function handleChartProxy(request, env) {
       method: 'POST',
       headers,
       body: bodyText || '{}',
+      signal: AbortSignal.timeout(15000),
     });
     const text = await upstream.text();
     return new Response(text, {

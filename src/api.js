@@ -17,27 +17,19 @@ async function readJson(response) {
 
 /**
  * Compute a natal chart via the active ChartProvider.
- * Local astronomy-engine is sync today; remote adapters may return a Promise.
- * Callers that already `await` keep working either way.
+ * Always returns a Promise — remote Swiss Ephemeris and local engines both work.
  */
-export function createChart(birthDetails) {
+export async function createChart(birthDetails) {
   const provider = getChartProvider();
-  const result = provider.computeNatal(birthDetails);
-  const meter = () => {
-    try {
-      getUsageMeter().recordChart({ provider: provider.id });
-    } catch {
-      /* metering must never block chart creation */
-    }
-  };
-  if (result && typeof result.then === 'function') {
-    return result.then((chart) => {
-      meter();
-      return chart;
+  const chart = await Promise.resolve(provider.computeNatal(birthDetails));
+  try {
+    getUsageMeter().recordChart({
+      provider: chart?.provenance?.provider || provider.id,
     });
+  } catch {
+    /* metering must never block chart creation */
   }
-  meter();
-  return result;
+  return chart;
 }
 
 /**
