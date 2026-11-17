@@ -36,7 +36,7 @@ function chartRemoteConfig(env) {
   };
 }
 
-async function handleChartProxy(request, env) {
+async function proxyChartUpstream(env, path, bodyText) {
   const { baseUrl, apiKey } = chartRemoteConfig(env);
   if (!baseUrl) {
     return json(
@@ -47,19 +47,10 @@ async function handleChartProxy(request, env) {
       503
     );
   }
-
-  let bodyText = '';
-  try {
-    bodyText = await request.text();
-  } catch {
-    return json({ error: 'invalid_body' }, 400);
-  }
-
   const headers = { 'content-type': 'application/json' };
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-
   try {
-    const upstream = await fetch(`${baseUrl}/api/v1/chart`, {
+    const upstream = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       headers,
       body: bodyText || '{}',
@@ -85,6 +76,26 @@ async function handleChartProxy(request, env) {
   }
 }
 
+async function handleChartProxy(request, env) {
+  let bodyText = '';
+  try {
+    bodyText = await request.text();
+  } catch {
+    return json({ error: 'invalid_body' }, 400);
+  }
+  return proxyChartUpstream(env, '/api/v1/chart', bodyText);
+}
+
+async function handleGocharaProxy(request, env) {
+  let bodyText = '';
+  try {
+    bodyText = await request.text();
+  } catch {
+    return json({ error: 'invalid_body' }, 400);
+  }
+  return proxyChartUpstream(env, '/api/v1/gochara', bodyText);
+}
+
 async function probeChartRemote(env) {
   const { baseUrl, apiKey } = chartRemoteConfig(env);
   if (!baseUrl) return { ok: false, detail: 'unconfigured' };
@@ -97,6 +108,7 @@ async function probeChartRemote(env) {
     return { ok: false, detail: String(error?.message || error).slice(0, 80) };
   }
 }
+
 
 
 function json(data, status = 200) {
@@ -696,6 +708,9 @@ export default {
 
     if (url.pathname === '/api/chart' && request.method === 'POST') {
       return handleChartProxy(request, env);
+    }
+    if (url.pathname === '/api/gochara' && request.method === 'POST') {
+      return handleGocharaProxy(request, env);
     }
 
 

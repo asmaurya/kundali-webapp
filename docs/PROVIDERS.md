@@ -5,9 +5,9 @@ How the beta stays swappable for chart engines, LLMs, and billing without rewrit
 ## ChartProvider
 
 - **Contract:** `computeNatal(birth) → canonical chart JSON` (lagna, grahas, houses, dasha…).
-- **Default (hybrid):** Worker `POST /api/chart` → Vercel Swiss Ephemeris (`chart-api/`, `@kuntay/swisseph`); falls back to local `astronomy-engine` if remote is down/unconfigured.
-- **Remote-only:** set `REACT_APP_CHART_API_URL` to the Vercel origin.
-- **Local-only:** set `REACT_APP_CHART_LOCAL_ONLY=1` (tests / offline).
+- **Production (Swiss only):** Worker `POST /api/chart` (+ `/api/gochara`) → Vercel Swiss Ephemeris (`chart-api/`, `@kuntay/swisseph`). No astronomy-engine fallback in the live app.
+- **Remote URL override:** set `REACT_APP_CHART_API_URL` to the Vercel origin.
+- **Local-only (tests):** set `REACT_APP_CHART_LOCAL_ONLY=1` for offline Jest fixtures.
 - **Call site:** `createChart()` in `src/api.js` only. UI never imports an ephemeris library.
 
 Deploy notes: see `chart-api/README.md`. Cloudflare needs `CHART_API_URL` (+ optional `CHART_API_KEY` / `VERCEL_CHART` bearer).

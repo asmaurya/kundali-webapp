@@ -7,6 +7,8 @@ import { ensureMemberChart, listProfiles, persistFamilyMembers, SELF_ID } from '
 import NorthIndianChart from './NorthIndianChart';
 import ChartSecondaryPanel from './ChartSecondaryPanel';
 import DashaPanel from './DashaPanel';
+import GrahaDegreeTable from './GrahaDegreeTable';
+import { enrichGrahas, planetLabel } from '../lib/grahaMeta';
 
 function printKundali({ profile, chart }) {
   const houses = (chart.houses || [])
@@ -151,12 +153,19 @@ function KundaliChartPage({ onBack }) {
               <Typography sx={{ fontSize: 13, color: '#4A4560', mb: 1.5 }}>{birthLabel}</Typography>
               <NorthIndianChart
                 houses={chart.houses || []}
-                grahas={chart.grahas || []}
+                grahas={enrichGrahas(chart.grahas || [])}
                 lagnaRashi={chart.lagna?.rashi || 1}
                 lang={locale}
                 labelMode={labelMode}
                 ariaLabel="Lagna Kundali north Indian chart"
               />
+              <GrahaDegreeTable chart={chart} lang={locale} />
+              {chart.provenance?.provider && (
+                <Typography sx={{ mt: 1, fontSize: 11, color: '#8A849E' }}>
+                  {locale === 'hi' ? 'गणना स्रोत' : 'Computed by'}: {chart.provenance.provider}
+                  {chart.provenance.ephemeris ? ` · ${chart.provenance.ephemeris}` : ''}
+                </Typography>
+              )}
             </Box>
 
             <Box sx={{ display: 'grid', gap: 2, alignContent: 'start' }}>
@@ -165,7 +174,12 @@ function KundaliChartPage({ onBack }) {
                 <Box sx={{ display: 'grid', gap: 1, mt: 1.5 }}>
                   {[
                     [t('lagna'), chart.summary.lagna],
-                    [t('moonSign'), chart.summary.moonSign],
+                    [
+                      t('moonSign'),
+                      locale === 'hi'
+                        ? `${planetLabel('Moon', 'hi')} · ${chart.summary.moonSign}`
+                        : chart.summary.moonSign,
+                    ],
                     [t('nakshatra'), chart.summary.nakshatra],
                     [t('currentDasha'), chart.summary.currentDasha],
                   ].map(([label, value]) => (

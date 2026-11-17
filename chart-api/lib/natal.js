@@ -79,9 +79,74 @@ const PLANETS = [
   ['saturn', Body.Saturn, 'Saturn'],
 ];
 
+const EXALTATION = {
+  Sun: 1,
+  Moon: 2,
+  Mars: 10,
+  Mercury: 6,
+  Jupiter: 4,
+  Venus: 12,
+  Saturn: 7,
+};
+const DEBILITATION = {
+  Sun: 7,
+  Moon: 8,
+  Mars: 4,
+  Mercury: 12,
+  Jupiter: 10,
+  Venus: 6,
+  Saturn: 1,
+};
+const COMBUST_ORB = {
+  Mercury: 14,
+  Venus: 10,
+  Mars: 17,
+  Jupiter: 11,
+  Saturn: 15,
+};
+
 function norm360(deg) {
   const x = deg % 360;
   return x < 0 ? x + 360 : x;
+}
+
+function navamsaRashi(longitude) {
+  const lon = norm360(longitude);
+  const sign = Math.floor(lon / 30);
+  const part = Math.floor((lon % 30) / (30 / 9));
+  const elementStarts = [0, 9, 6, 3];
+  const start = elementStarts[sign % 4];
+  return ((start + part) % 12) + 1;
+}
+
+function enrichGraha(g, sunLon) {
+  const uchcha = EXALTATION[g.name] != null && EXALTATION[g.name] === g.rashi;
+  const neecha = DEBILITATION[g.name] != null && DEBILITATION[g.name] === g.rashi;
+  const vakri = Boolean(g.retrograde);
+  let ast = false;
+  if (sunLon != null && COMBUST_ORB[g.name] != null) {
+    let delta = Math.abs(norm360(g.longitude - sunLon));
+    if (delta > 180) delta = 360 - delta;
+    ast = delta <= COMBUST_ORB[g.name];
+  }
+  const d9 = navamsaRashi(g.longitude);
+  const vargottam = d9 === g.rashi;
+  return {
+    ...g,
+    uchcha,
+    neecha,
+    vakri,
+    ast,
+    vargottam,
+    navamsaRashi: d9,
+    marks: [
+      uchcha ? '↑' : '',
+      neecha ? '↓' : '',
+      vakri ? '*' : '',
+      ast ? '^' : '',
+      vargottam ? '◎' : '',
+    ].join(''),
+  };
 }
 
 function placementFromSidereal(lon) {
@@ -226,6 +291,10 @@ export async function computeNatalChart(birth) {
     }
   );
 
+  const sun = grahas.find((g) => g.id === 'sun');
+  const enriched = grahas.map((g) => enrichGraha(g, sun?.longitude));
+  grahas.splice(0, grahas.length, ...enriched);
+
   const moon = grahas.find((g) => g.id === 'moon');
   const dasha = vimshottariFromMoon(moon.longitude, utc);
   const houseRows = Array.from({ length: 12 }, (_, i) => {
@@ -281,6 +350,87 @@ export async function computeNatalChart(birth) {
       ayanamsa: 'lahiri',
       computed_at: new Date().toISOString(),
       runtime: 'vercel',
+    },
+  };
+}
+
+/**
+ * Swiss Ephemeris gochara (transit) positions for a moment + place.
+ * @param {{ lat:number, lon:number, tzOffsetHours?:number, at?: string|Date, lagnaRashi?: number }} input
+ */
+export async function computeGochara(input = {}) {
+  const lat = Number(input.lat);
+  const lon = Number(input.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    throw new Error('lat and lon are required for gochara.');
+  }
+  const tz = Number.isFinite(Number(input.tzOffsetHours)) ? Number(input.tzOffsetHours) : 5.5;
+  const at = input.at ? new Date(input.at) : new Date();
+  if (Number.isNaN(at.getTime())) throw new Error('Invalid gochara timestamp.');
+
+  const swe = await getSwe();
+  const utHour =
+    at.getUTCHours() +
+    at.getUTCMinutes() / 60 +
+    at.getUTCSeconds() / 3600 +
+    at.getUTCMilliseconds() / 3600000;
+  const jd = swe.julianDay(
+    at.getUTCFullYear(),
+    at.getUTCMonth() + 1,
+    at.getUTCDate(),
+    utHour
+  );
+  const sidereal = { flags: Flag.Sidereal };
+  const lagnaRashi = Number(input.lagnaRashi) || 1;
+
+  const rows = PLANETS.map(([id, body, name]) => {
+    const pos = swe.calcWithSign(jd, body, sidereal);
+    const place = placementFromSidereal(pos.longitude);
+    return {
+      planet: name,
+      id,
+      sign: place.rashiName,
+      degree: place.degree,
+      house: wholeSignHouse(place.rashi, lagnaRashi),
+      longitude: place.longitude,
+      retrograde: Boolean(pos.retrograde),
+    };
+  });
+
+  const rahuPos = swe.calcWithSign(jd, Body.MeanNode, sidereal);
+  const rahu = placementFromSidereal(rahuPos.longitude);
+  const ketu = placementFromSidereal(rahuPos.longitude + 180);
+  rows.push(
+    {
+      planet: 'Rahu',
+      id: 'rahu',
+      sign: rahu.rashiName,
+      degree: rahu.degree,
+      house: wholeSignHouse(rahu.rashi, lagnaRashi),
+      longitude: rahu.longitude,
+      retrograde: true,
+    },
+    {
+      planet: 'Ketu',
+      id: 'ketu',
+      sign: ketu.rashiName,
+      degree: ketu.degree,
+      house: wholeSignHouse(ketu.rashi, lagnaRashi),
+      longitude: ketu.longitude,
+      retrograde: true,
+    }
+  );
+
+  return {
+    at: at.toISOString(),
+    lat,
+    lon,
+    tzOffsetHours: tz,
+    lagnaRashi,
+    rows,
+    provenance: {
+      provider: 'swiss-ephemeris-wasm',
+      computed_at: new Date().toISOString(),
     },
   };
 }

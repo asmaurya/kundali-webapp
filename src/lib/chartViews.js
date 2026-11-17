@@ -1,12 +1,9 @@
 /**
  * Derived kundali views + dasha cascades from a base Lagna chart.
+ * Natal longitudes must come from Swiss Ephemeris; gochara is loaded via /api/gochara.
  */
-import { Body, Ecliptic, GeoVector, MakeTime } from 'astronomy-engine';
-import {
-  RASHIS,
-  lahiriAyanamsa,
-  meanNodeLongitude,
-} from './chartEngine';
+import { RASHIS } from './chartEngine';
+import { enrichGrahas, formatDegreeDms, planetLabel } from './grahaMeta';
 
 const DASHA_LORDS = [
   'Ketu',
@@ -243,79 +240,43 @@ export function deriveChalitChart(chart) {
   };
 }
 
-export function deriveGrahSthiti(chart) {
+export function deriveGrahSthiti(chart, lang = 'en') {
+  const rows = enrichGrahas(chart.grahas || []).map((g) => ({
+    planet: planetLabel(g.name, lang),
+    glyph: g.name,
+    sign: g.rashiName,
+    degree: formatDegreeDms(g.degree),
+    house: g.house,
+    nakshatra: g.nakshatraName,
+    pada: g.pada,
+    marks: g.marks || '—',
+    retrograde: Boolean(g.retrograde),
+  }));
   return {
     id: 'grah-sthiti',
     title: 'Grah Sthiti',
-    subtitle: 'Planetary positions at birth',
+    subtitle: 'Planetary positions at birth (Swiss Ephemeris)',
     kind: 'table',
-    rows: chart.grahas.map((g) => ({
-      planet: g.name,
-      sign: g.rashiName,
-      degree: g.degree,
-      house: g.house,
-      nakshatra: g.nakshatraName,
-      pada: g.pada,
-      retrograde: Boolean(g.retrograde),
-    })),
+    rows,
   };
 }
 
-function tropicalLongitude(body, time) {
-  const vec = GeoVector(body, time, true);
-  return norm360(Ecliptic(vec).elon);
-}
-
-export function deriveGochara(chart, at = new Date()) {
-  const time = MakeTime(at);
-  const ayanamsa = lahiriAyanamsa(at);
-  const bodies = [
-    ['Sun', Body.Sun],
-    ['Moon', Body.Moon],
-    ['Mars', Body.Mars],
-    ['Mercury', Body.Mercury],
-    ['Jupiter', Body.Jupiter],
-    ['Venus', Body.Venus],
-    ['Saturn', Body.Saturn],
-  ];
-  const rows = bodies.map(([name, body]) => {
-    const lon = norm360(tropicalLongitude(body, time) - ayanamsa);
-    const rashi = Math.floor(lon / 30) + 1;
-    const natal = chart.grahas.find((g) => g.name === name);
-    const house = natal ? wholeSignHouse(rashi, chart.lagna.rashi) : null;
-    return {
-      planet: name,
-      sign: RASHIS[rashi - 1],
-      degree: Number((lon % 30).toFixed(2)),
-      house,
-      natalSign: natal?.rashiName || '—',
-    };
-  });
-  const rahuLon = norm360(meanNodeLongitude(at) - ayanamsa);
-  const rahuRashi = Math.floor(rahuLon / 30) + 1;
-  rows.push({
-    planet: 'Rahu',
-    sign: RASHIS[rahuRashi - 1],
-    degree: Number((rahuLon % 30).toFixed(2)),
-    house: wholeSignHouse(rahuRashi, chart.lagna.rashi),
-    natalSign: chart.grahas.find((g) => g.id === 'rahu')?.rashiName || '—',
-  });
-  const ketuLon = norm360(rahuLon + 180);
-  const ketuRashi = Math.floor(ketuLon / 30) + 1;
-  rows.push({
-    planet: 'Ketu',
-    sign: RASHIS[ketuRashi - 1],
-    degree: Number((ketuLon % 30).toFixed(2)),
-    house: wholeSignHouse(ketuRashi, chart.lagna.rashi),
-    natalSign: chart.grahas.find((g) => g.id === 'ketu')?.rashiName || '—',
-  });
-
+/** Placeholder — ChartSecondaryPanel loads Swiss gochara via /api/gochara. */
+export function deriveGochara(chart) {
   return {
     id: 'gochara',
     title: 'Gochara (Transits)',
-    subtitle: `As of ${dateOnly(at)}`,
+    subtitle: 'Swiss Ephemeris · opens to load current transits',
     kind: 'table',
-    rows,
+    rows: [],
+    needsSwissGochara: true,
+    natalByPlanet: Object.fromEntries(
+      (chart.grahas || []).map((g) => [g.name, g.rashiName || '—'])
+    ),
+    lagnaRashi: chart.lagna?.rashi || 1,
+    lat: chart.birth?.lat,
+    lon: chart.birth?.lon,
+    tzOffsetHours: chart.birth?.tzOffsetHours,
   };
 }
 
@@ -347,13 +308,13 @@ export function deriveShadbala(chart) {
   };
 }
 
-export function buildSecondaryViews(chart) {
+export function buildSecondaryViews(chart, lang = 'en') {
   if (!chart) return [];
   return [
     deriveChandraChart(chart),
     deriveNavamsaChart(chart),
     deriveChalitChart(chart),
-    deriveGrahSthiti(chart),
+    deriveGrahSthiti(chart, lang),
     deriveGochara(chart),
     deriveShadbala(chart),
   ].filter(Boolean);
