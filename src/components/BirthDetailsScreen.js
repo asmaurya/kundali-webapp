@@ -6,6 +6,21 @@ import PlaceIcon from '@mui/icons-material/Place';
 import LockIcon from '@mui/icons-material/Lock';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
+const fieldSx = {
+  '& .MuiOutlinedInput-root': {
+    bgcolor: '#FDFBFF',
+    borderRadius: 2.5,
+  },
+  // Keep the floating label above the outline notch, never over the value.
+  '& .MuiInputLabel-root': {
+    backgroundColor: '#FCF8F3',
+    px: 0.5,
+  },
+  '& .MuiInputLabel-shrink': {
+    transform: 'translate(14px, -9px) scale(0.75)',
+  },
+};
+
 function BirthDetailsScreen({ onSubmit, onBack }) {
   const [details, setDetails] = useState({
     date: '',
@@ -40,21 +55,24 @@ function BirthDetailsScreen({ onSubmit, onBack }) {
           Help us create your personal astrology chart.
         </Typography>
 
-        <Box sx={{ display: 'grid', gap: 2, mt: 4 }}>
+        <Box sx={{ display: 'grid', gap: 2.5, mt: 4 }}>
           <TextField
             label="Date of Birth"
             type="date"
             value={details.date}
             onChange={handleChange('date')}
-            InputLabelProps={{ shrink: true }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <CalendarMonthIcon sx={{ color: '#5B3FA0' }} />
-                </InputAdornment>
-              ),
+            fullWidth
+            slotProps={{
+              inputLabel: { shrink: true },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <CalendarMonthIcon sx={{ color: '#5B3FA0' }} />
+                  </InputAdornment>
+                ),
+              },
             }}
-            sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#FDFBFF', borderRadius: 2.5 } }}
+            sx={fieldSx}
           />
 
           <TextField
@@ -62,15 +80,18 @@ function BirthDetailsScreen({ onSubmit, onBack }) {
             type="time"
             value={details.time}
             onChange={handleChange('time')}
-            InputLabelProps={{ shrink: true }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <ScheduleIcon sx={{ color: '#5B3FA0' }} />
-                </InputAdornment>
-              ),
+            fullWidth
+            slotProps={{
+              inputLabel: { shrink: true },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <ScheduleIcon sx={{ color: '#5B3FA0' }} />
+                  </InputAdornment>
+                ),
+              },
             }}
-            sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#FDFBFF', borderRadius: 2.5 } }}
+            sx={fieldSx}
           />
 
           <TextField
@@ -78,14 +99,18 @@ function BirthDetailsScreen({ onSubmit, onBack }) {
             value={details.place}
             onChange={handleChange('place')}
             placeholder="City, State, Country"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <PlaceIcon sx={{ color: '#5B3FA0' }} />
-                </InputAdornment>
-              ),
+            fullWidth
+            slotProps={{
+              inputLabel: { shrink: Boolean(details.place) },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <PlaceIcon sx={{ color: '#5B3FA0' }} />
+                  </InputAdornment>
+                ),
+              },
             }}
-            sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#FDFBFF', borderRadius: 2.5 } }}
+            sx={fieldSx}
           />
         </Box>
 
