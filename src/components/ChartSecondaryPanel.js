@@ -74,7 +74,7 @@ function TableView({ rows, columns }) {
   );
 }
 
-function ChartSecondaryPanel({ chart, lang = 'en' }) {
+function ChartSecondaryPanel({ chart, lang = 'en', labelMode = 'planet' }) {
   const views = useMemo(() => buildSecondaryViews(chart), [chart]);
   const [expanded, setExpanded] = useState(false);
 
@@ -115,8 +115,10 @@ function ChartSecondaryPanel({ chart, lang = 'en' }) {
               <Box sx={{ maxWidth: 320 }}>
                 <NorthIndianChart
                   houses={view.houses}
+                  grahas={view.grahas || chart.grahas || []}
                   lagnaRashi={view.lagnaRashi}
                   lang={lang}
+                  labelMode={labelMode}
                   ariaLabel={`${view.title} north Indian chart`}
                 />
               </Box>

@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  InputAdornment,
   LinearProgress,
   MenuItem,
   Step,
@@ -14,9 +15,9 @@ import {
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import ScheduleIcon from '@mui/icons-material/Schedule';
-import PlaceIcon from '@mui/icons-material/Place';
 import FamilyMemberCard from './FamilyMemberCard';
 import AppModal from './AppModal';
+import PlaceOfBirthField from './PlaceOfBirthField';
 import {
   ensureMemberChart,
   getFamilyOnly,
@@ -24,7 +25,20 @@ import {
   persistFamilyMembers,
 } from '../lib/profiles';
 import { loadFamilyMembers } from '../betaSession';
-import { addReport } from '../lib/libraryStore';
+
+const fieldSx = {
+  '& .MuiOutlinedInput-root': {
+    bgcolor: '#FDFBFF',
+    borderRadius: 2.5,
+  },
+  '& .MuiInputLabel-root': {
+    backgroundColor: '#FFFFFF',
+    px: 0.5,
+  },
+  '& .MuiInputLabel-shrink': {
+    transform: 'translate(14px, -9px) scale(0.75)',
+  },
+};
 
 const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'];
 
@@ -86,6 +100,7 @@ function FamilyListPage() {
   const [editing, setEditing] = useState(null);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [placeMeta, setPlaceMeta] = useState(null);
 
   const refresh = (familyOnly) => {
     setMembers([getSelfProfile(), ...familyOnly.map((m) => ensureMemberChart(m))]);
@@ -94,6 +109,7 @@ function FamilyListPage() {
   const openWizard = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setPlaceMeta(null);
     setStep(0);
     setWizardOpen(true);
   };
@@ -108,6 +124,19 @@ function FamilyListPage() {
       time: member.time || '',
       place: member.place || '',
     });
+    setPlaceMeta(
+      member.lat != null
+        ? {
+            lat: member.lat,
+            lon: member.lon,
+            tzOffsetHours: member.tzOffsetHours,
+            countryCode: member.countryCode,
+            placeId: member.placeId,
+            source: member.source,
+            label: member.place,
+          }
+        : null
+    );
     setStep(0);
     setWizardOpen(true);
   };
@@ -117,21 +146,21 @@ function FamilyListPage() {
   };
 
   const saveMember = () => {
+    const birth = { ...form };
+    if (placeMeta && Number.isFinite(Number(placeMeta.lat)) && Number.isFinite(Number(placeMeta.lon))) {
+      birth.lat = Number(placeMeta.lat);
+      birth.lon = Number(placeMeta.lon);
+      birth.tzOffsetHours = placeMeta.tzOffsetHours;
+      birth.countryCode = placeMeta.countryCode;
+      birth.placeId = placeMeta.placeId;
+      birth.source = placeMeta.source;
+      birth.place = placeMeta.label || form.place;
+    }
     const withChart = ensureMemberChart({
       ...(editing || {}),
-      ...form,
+      ...birth,
       id: editing?.id || Date.now(),
     });
-    if (withChart.chart) {
-      addReport({
-        title: `${withChart.name} · Lagna Kundali`,
-        memberId: String(withChart.id),
-        memberName: withChart.name,
-        kind: 'kundali',
-        summary: `Chart prepared for ${withChart.relation}.`,
-        source: 'family',
-      });
-    }
     const family = members.filter((m) => !m.isSelf);
     const nextFamily = editing
       ? family.map((member) => (member.id === editing.id ? withChart : member))
@@ -147,16 +176,6 @@ function FamilyListPage() {
       .filter((m) => !m.isSelf)
       .map((item) => (item.id === member.id ? prepared : item));
     refresh(nextFamily);
-    if (prepared.chart) {
-      addReport({
-        title: `${prepared.name} · Lagna Kundali`,
-        memberId: String(prepared.id),
-        memberName: prepared.name,
-        kind: 'kundali',
-        summary: `Chart prepared for ${prepared.relation}.`,
-        source: 'family',
-      });
-    }
   };
 
   const deleteMember = (member) => {
@@ -298,41 +317,50 @@ function FamilyListPage() {
         )}
 
         {step === 1 && (
-          <Box sx={{ display: 'grid', gap: 2 }}>
+          <Box sx={{ display: 'grid', gap: 2.5 }}>
             <TextField
               label="Date of Birth"
               type="date"
               value={form.date}
               onChange={update('date')}
-              InputLabelProps={{ shrink: true }}
-              InputProps={{
-                startAdornment: (
-                  <CalendarMonthIcon sx={{ mr: 1, color: '#5B3FA0' }} fontSize="small" />
-                ),
+              fullWidth
+              slotProps={{
+                inputLabel: { shrink: true },
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <CalendarMonthIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
+                    </InputAdornment>
+                  ),
+                },
               }}
-              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#FDFBFF' } }}
+              sx={fieldSx}
             />
             <TextField
               label="Time of Birth"
               type="time"
               value={form.time}
               onChange={update('time')}
-              InputLabelProps={{ shrink: true }}
-              InputProps={{
-                startAdornment: (
-                  <ScheduleIcon sx={{ mr: 1, color: '#5B3FA0' }} fontSize="small" />
-                ),
+              fullWidth
+              slotProps={{
+                inputLabel: { shrink: true },
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <ScheduleIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
+                    </InputAdornment>
+                  ),
+                },
               }}
-              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#FDFBFF' } }}
+              sx={fieldSx}
             />
-            <TextField
+            <PlaceOfBirthField
               label="Place of Birth"
+              placeholder="Start typing a city…"
+              hint="Pick a place from the suggestions for an accurate chart."
               value={form.place}
-              onChange={update('place')}
-              InputProps={{
-                startAdornment: <PlaceIcon sx={{ mr: 1, color: '#5B3FA0' }} fontSize="small" />,
-              }}
-              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#FDFBFF' } }}
+              onChange={(place) => setForm((current) => ({ ...current, place }))}
+              onResolved={setPlaceMeta}
             />
           </Box>
         )}

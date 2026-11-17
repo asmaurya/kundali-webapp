@@ -18,6 +18,24 @@ test('renders rashi numbers and planet abbreviations in the diamond chart', () =
   render(<NorthIndianChart houses={houses} lagnaRashi={5} lang="en" />);
 
   expect(screen.getByLabelText(/north indian natal chart/i)).toBeInTheDocument();
-  expect(screen.getByText('Su Mo')).toBeInTheDocument();
+  expect(screen.getByText('Su')).toBeInTheDocument();
+  expect(screen.getByText('Mo')).toBeInTheDocument();
   expect(screen.getByText('Sa')).toBeInTheDocument();
+});
+
+test('sign label mode shows sign abbreviations with hover titles', () => {
+  const houses = Array.from({ length: 12 }, (_, i) => ({
+    house: i + 1,
+    sign: i === 0 ? 'Leo' : 'Aries',
+    planets: i === 0 ? ['Sun'] : [],
+  }));
+  render(
+    <NorthIndianChart
+      houses={houses}
+      grahas={[{ name: 'Sun', rashiName: 'Leo' }]}
+      lagnaRashi={5}
+      labelMode="sign"
+    />
+  );
+  expect(screen.getByText('Le')).toBeInTheDocument();
 });

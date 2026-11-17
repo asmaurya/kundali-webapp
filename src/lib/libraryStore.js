@@ -41,6 +41,8 @@ export function addReport(report) {
       createdAt: report.createdAt || new Date().toISOString(),
       summary: report.summary || '',
       source: report.source || 'chat',
+      generatedBy: report.generatedBy || 'Astro Chat',
+      generatedByType: report.generatedByType || 'ai',
     },
     ...loadReports(),
   ].slice(0, 80);
@@ -99,18 +101,37 @@ export function markAstrologerUsed(astrologerId) {
 
 /** Seed a few library items once so empty states are not barren after onboarding. */
 export function ensureLibrarySeeds({ memberName = 'You' } = {}) {
-  if (loadReports().length === 0) {
+  const existing = loadReports();
+  const chatOnly = existing.filter(
+    (r) => r.kind === 'chat' || r.source === 'chat' || r.source === 'ai' || r.source === 'human'
+  );
+  if (existing.length === 0 || (existing.length > 0 && chatOnly.length === 0 && existing.every((r) => r.kind === 'kundali' || r.source === 'chart' || r.source === 'kundali' || r.source === 'family'))) {
     saveReports([
       {
-        id: 'seed-chart',
-        title: 'Lagna Kundali snapshot',
+        id: 'seed-career',
+        title: 'Career transition guidance',
         memberId: 'self',
         memberName,
-        kind: 'kundali',
+        kind: 'chat',
         createdAt: new Date().toISOString(),
-        summary: 'North Indian lagna chart generated at onboarding.',
-        source: 'chart',
+        summary: 'Steady skill-building favoured over abrupt leaps in the current dasha.',
+        source: 'ai',
+        generatedBy: 'Astro Chat',
+        generatedByType: 'ai',
       },
+      {
+        id: 'seed-marriage',
+        title: 'Marriage timing note',
+        memberId: 'self',
+        memberName,
+        kind: 'chat',
+        createdAt: new Date(Date.now() - 86400000).toISOString(),
+        summary: 'Seventh-house themes favour clear communication over haste.',
+        source: 'human',
+        generatedBy: 'Acharya Meera Verma',
+        generatedByType: 'live',
+      },
+      ...chatOnly,
     ]);
   }
   if (loadRemedies().length === 0) {
@@ -146,16 +167,19 @@ export function maybeCaptureRemedyFromReply({ text, astrologer, memberName }) {
   });
 }
 
-export function maybeCaptureReportFromChat({ question, reply, memberName }) {
+export function maybeCaptureReportFromChat({ question, reply, memberName, astrologer }) {
   if (!question || !reply) return null;
   if (!/report|career|marriage|health|finance|compatibility|timing/i.test(question)) {
     return null;
   }
+  const isHuman = astrologer?.type === 'live';
   return addReport({
     title: question.length > 48 ? `${question.slice(0, 45)}…` : question,
     memberName: memberName || 'You',
     kind: 'chat',
     summary: reply.length > 160 ? `${reply.slice(0, 157)}…` : reply,
-    source: 'chat',
+    source: isHuman ? 'human' : 'ai',
+    generatedBy: astrologer?.name || 'Astro Chat',
+    generatedByType: isHuman ? 'live' : 'ai',
   });
 }

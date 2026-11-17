@@ -323,7 +323,11 @@ export function ChatProvider({ children }) {
       }
 
       maybeCaptureRemedyFromReply({ text: replyText, astrologer });
-      maybeCaptureReportFromChat({ question: trimmed, reply: replyText });
+      maybeCaptureReportFromChat({
+        question: trimmed,
+        reply: replyText,
+        astrologer,
+      });
 
       setConversations((current) =>
         current.map((conversation) => {

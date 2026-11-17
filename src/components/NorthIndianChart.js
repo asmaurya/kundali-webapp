@@ -94,6 +94,21 @@ const PLANET_SHORT = {
   },
 };
 
+const SIGN_SHORT = {
+  Aries: 'Ar',
+  Taurus: 'Ta',
+  Gemini: 'Ge',
+  Cancer: 'Cn',
+  Leo: 'Le',
+  Virgo: 'Vi',
+  Libra: 'Li',
+  Scorpio: 'Sc',
+  Sagittarius: 'Sg',
+  Capricorn: 'Cp',
+  Aquarius: 'Aq',
+  Pisces: 'Pi',
+};
+
 function centroid(points) {
   const sum = points.reduce(
     (acc, [x, y]) => ({ x: acc.x + x, y: acc.y + y }),
@@ -107,13 +122,34 @@ function pointsAttr(points) {
 }
 
 /**
- * North Indian whole-sign chart.
- * @param {{ houses: Array<{house:number,sign:string,planets:string[]}>, lagnaRashi?: number, lang?: 'en'|'hi' }} props
+ * @param {{
+ *   houses: Array<{house:number,sign:string,planets:string[]}>,
+ *   grahas?: Array<{name:string,rashiName?:string}>,
+ *   lagnaRashi?: number,
+ *   lang?: 'en'|'hi',
+ *   labelMode?: 'planet'|'sign',
+ *   ariaLabel?: string,
+ * }} props
  */
-function NorthIndianChart({ houses = [], lagnaRashi = 1, lang = 'en', ariaLabel }) {
+function NorthIndianChart({
+  houses = [],
+  grahas = [],
+  lagnaRashi = 1,
+  lang = 'en',
+  labelMode = 'planet',
+  ariaLabel,
+}) {
   const short = PLANET_SHORT[lang] || PLANET_SHORT.en;
   const label =
     ariaLabel || (lang === 'hi' ? 'उत्तर भारतीय कुंडली' : 'North Indian natal chart');
+
+  const grahaByName = useMemo(() => {
+    const map = {};
+    (grahas || []).forEach((g) => {
+      map[g.name] = g;
+    });
+    return map;
+  }, [grahas]);
 
   const cells = useMemo(() => {
     return Array.from({ length: 12 }, (_, index) => {
@@ -129,6 +165,21 @@ function NorthIndianChart({ houses = [], lagnaRashi = 1, lang = 'en', ariaLabel 
       return { house, row, rashiNumber, poly, center };
     });
   }, [houses, lagnaRashi]);
+
+  const formatPlanet = (name, houseSign) => {
+    const graha = grahaByName[name];
+    const signName = graha?.rashiName || houseSign || '';
+    if (labelMode === 'sign') {
+      return SIGN_SHORT[signName] || signName.slice(0, 2) || short[name] || name.slice(0, 2);
+    }
+    return short[name] || name.slice(0, 2);
+  };
+
+  const hoverTitle = (name, houseSign) => {
+    const graha = grahaByName[name];
+    const signName = graha?.rashiName || houseSign || '';
+    return signName ? `${name} · ${signName}` : name;
+  };
 
   return (
     <Box
@@ -164,27 +215,34 @@ function NorthIndianChart({ houses = [], lagnaRashi = 1, lang = 'en', ariaLabel 
             >
               {rashiNumber}
             </text>
-            {row.planets.length > 0 && (
-              <text
-                x={center.x}
-                y={center.y + 10}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fill="#5B3FA0"
-                fontSize="12"
-                fontWeight="700"
-                fontFamily="inherit"
-              >
-                {row.planets.map((name) => short[name] || name.slice(0, 2)).join(' ')}
-              </text>
-            )}
+            {row.planets.map((name, index) => {
+              const count = row.planets.length;
+              const offset = (index - (count - 1) / 2) * 14;
+              return (
+                <text
+                  key={`${house}-${name}`}
+                  x={center.x + offset}
+                  y={center.y + 12}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="#5B3FA0"
+                  fontSize="11"
+                  fontWeight="700"
+                  fontFamily="inherit"
+                  style={{ cursor: 'default' }}
+                >
+                  <title>{hoverTitle(name, row.sign)}</title>
+                  {formatPlanet(name, row.sign)}
+                </text>
+              );
+            })}
           </g>
         ))}
       </svg>
       <Typography sx={{ px: 1.5, pb: 1, fontSize: 11, color: '#6A6580', textAlign: 'center' }}>
-        {lang === 'hi'
-          ? 'घर 1 = लग्न · राशियाँ संख्या में · ग्रह संक्षेप में'
-          : 'House 1 = Lagna · numbers are rashis · planets abbreviated'}
+        {labelMode === 'sign'
+          ? 'House 1 = Lagna · numbers are rashis · glyphs show planet signs · hover for name'
+          : 'House 1 = Lagna · numbers are rashis · planet abbrev · hover for full name + sign'}
       </Typography>
     </Box>
   );

@@ -31,12 +31,27 @@ function formatWhen(iso) {
   }
 }
 
+function isChatReport(report) {
+  const kind = String(report.kind || '');
+  const source = String(report.source || '');
+  if (kind === 'kundali' || source === 'kundali' || source === 'chart' || source === 'family') {
+    return false;
+  }
+  return kind === 'chat' || source === 'chat' || source === 'ai' || source === 'human';
+}
+
+function sourceLabel(report) {
+  if (report.source === 'human' || report.generatedByType === 'live') return 'Human astro';
+  if (report.source === 'ai' || report.generatedByType === 'ai') return 'AI astro';
+  return report.generatedBy || 'Astro Chat';
+}
+
 function downloadReport(report) {
   const body = [
     report.title,
-    `Member: ${report.memberName}`,
+    `For: ${report.memberName}`,
+    `Prepared by: ${report.generatedBy || sourceLabel(report)}`,
     `Created: ${report.createdAt}`,
-    `Kind: ${report.kind}`,
     '',
     report.summary || '',
   ].join('\n');
@@ -55,7 +70,7 @@ function downloadReport(report) {
 function ReportsPage({ onBack }) {
   const self = getSelfProfile();
   ensureLibrarySeeds({ memberName: self.name });
-  const [reports] = useState(() => loadReports());
+  const [reports] = useState(() => loadReports().filter(isChatReport));
   const [memberFilter, setMemberFilter] = useState('all');
   const members = listProfiles();
 
@@ -89,7 +104,7 @@ function ReportsPage({ onBack }) {
           Detailed Reports
         </Typography>
         <Typography sx={{ mt: 0.5, fontSize: 15, color: '#3A3550' }}>
-          Kundali snapshots and chat findings for you and family — newest first, grouped by day.
+          Readings prepared in chat by AI or human astrologers. Print Kundali from the chart page.
         </Typography>
 
         <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -108,13 +123,14 @@ function ReportsPage({ onBack }) {
               </MenuItem>
             ))}
           </TextField>
-          <Chip label={`${filtered.length} items`} sx={{ bgcolor: '#EFE9F7', color: '#5B3FA0' }} />
+          <Chip label={`${filtered.length} reports`} sx={{ bgcolor: '#EFE9F7', color: '#5B3FA0' }} />
         </Box>
 
         {grouped.length === 0 ? (
           <Box className="panel" sx={{ mt: 3 }}>
             <Typography sx={{ color: '#4A4560' }}>
-              No reports yet. Charts you open and chat topics like career or marriage will appear here.
+              No chat reports yet. Ask Astro Chat or a human astrologer about career, marriage,
+              health or timing — those readings will collect here.
             </Typography>
           </Box>
         ) : (
@@ -135,7 +151,8 @@ function ReportsPage({ onBack }) {
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700 }}>Report</TableCell>
-                      <TableCell sx={{ fontWeight: 700 }}>Member</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>For</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>Prepared by</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>When</TableCell>
                       <TableCell sx={{ fontWeight: 700 }} align="right">
                         Download
@@ -154,6 +171,23 @@ function ReportsPage({ onBack }) {
                           </Typography>
                         </TableCell>
                         <TableCell sx={{ whiteSpace: 'nowrap' }}>{report.memberName}</TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                          <Chip
+                            size="small"
+                            label={report.generatedBy || sourceLabel(report)}
+                            sx={{
+                              bgcolor:
+                                report.source === 'human' || report.generatedByType === 'live'
+                                  ? '#D9F0DC'
+                                  : '#EFE9F7',
+                              color:
+                                report.source === 'human' || report.generatedByType === 'live'
+                                  ? '#1E7A36'
+                                  : '#5B3FA0',
+                              fontWeight: 600,
+                            }}
+                          />
+                        </TableCell>
                         <TableCell sx={{ whiteSpace: 'nowrap', color: '#4A4560', fontSize: 13 }}>
                           {formatWhen(report.createdAt)}
                         </TableCell>

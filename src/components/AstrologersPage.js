@@ -47,7 +47,7 @@ function AstrologersPage({ onBack, onOpenChat }) {
   return (
     <Box className="stack-page">
       <Box className="hill-deco" sx={{ opacity: 0.7 }} />
-      <Box sx={{ position: 'relative', zIndex: 1, width: 'min(880px, 100%)', margin: '0 auto', padding: '28px 32px 48px' }}>
+      <Box sx={{ position: 'relative', zIndex: 1, width: 'min(1040px, 100%)', margin: '0 auto', padding: '28px 32px 48px' }}>
         <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: '#1E1B2E', pl: 0, mb: 2 }}>
           Back to Services
         </Button>
@@ -59,68 +59,81 @@ function AstrologersPage({ onBack, onOpenChat }) {
           Verified human readers. Rate them privately for your own reference.
         </Typography>
 
-        <Box sx={{ display: 'grid', gap: 2, mt: 3 }}>
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 2,
+            mt: 3,
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              md: 'repeat(3, minmax(0, 1fr))',
+            },
+          }}
+        >
           {people.map((person) => (
             <Box
               key={person.id}
               sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: 'auto 1fr auto' },
-                gap: 2,
-                alignItems: 'center',
-                p: 2.25,
+                display: 'flex',
+                flexDirection: 'column',
+                aspectRatio: { sm: '1 / 1.05' },
+                p: 2.5,
                 bgcolor: '#FFFFFF',
                 border: '1px solid #E6DEEF',
                 borderRadius: 3,
+                minHeight: 280,
               }}
             >
               <Box
                 sx={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: '50%',
+                  width: 64,
+                  height: 64,
+                  borderRadius: 2,
                   display: 'grid',
                   placeItems: 'center',
                   fontWeight: 700,
+                  fontSize: 20,
                   bgcolor: person.tint,
                   color: person.accent,
                   border: `1px solid ${person.accent}33`,
+                  mb: 1.5,
                 }}
               >
                 {person.initials}
               </Box>
 
-              <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontWeight: 700, color: person.accent }}>
-                  {person.name}
-                  <VerifiedIcon sx={{ ml: 0.5, fontSize: 16, color: '#6B4FA0', verticalAlign: '-2px' }} />
-                </Typography>
-                <Typography sx={{ mt: 0.35, fontSize: 14, color: '#3A3550' }}>
-                  {person.oneLiner}
-                </Typography>
-                <Typography sx={{ mt: 0.75, fontSize: 12, color: '#6A6580' }}>
-                  {person.online ? 'Online now' : 'Offline'} · {person.price} ·{' '}
-                  {formatRelative(lastUsed[person.id])}
-                </Typography>
-                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography sx={{ fontSize: 12, color: '#6A6580' }}>Your rating</Typography>
-                  <Rating
-                    size="small"
-                    value={Number(ratings[person.id]?.rating || 0)}
-                    onChange={(_e, value) => {
-                      if (!value) return;
-                      setAstrologerRating(person.id, value);
-                      setRatings(loadAstrologerRatings());
-                    }}
-                  />
-                </Box>
+              <Typography sx={{ fontWeight: 700, color: person.accent, lineHeight: 1.3 }}>
+                {person.name}
+                <VerifiedIcon sx={{ ml: 0.5, fontSize: 16, color: '#6B4FA0', verticalAlign: '-2px' }} />
+              </Typography>
+              <Typography sx={{ mt: 0.75, fontSize: 14, color: '#3A3550', flexGrow: 1 }}>
+                {person.oneLiner}
+              </Typography>
+              <Typography sx={{ mt: 1, fontSize: 12, color: '#6A6580' }}>
+                {person.online ? 'Online now' : 'Offline'} · {person.price}
+              </Typography>
+              <Typography sx={{ mt: 0.35, fontSize: 12, color: '#8A849E' }}>
+                {formatRelative(lastUsed[person.id])}
+              </Typography>
+              <Box sx={{ mt: 1.25, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{ fontSize: 12, color: '#6A6580' }}>Your rating</Typography>
+                <Rating
+                  size="small"
+                  value={Number(ratings[person.id]?.rating || 0)}
+                  onChange={(_e, value) => {
+                    if (!value) return;
+                    setAstrologerRating(person.id, value);
+                    setRatings(loadAstrologerRatings());
+                  }}
+                />
               </Box>
-
               <Button
+                fullWidth
                 variant="contained"
                 onClick={() => open(person.id)}
                 disabled={!person.online}
-                sx={{ bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' }, justifySelf: { sm: 'end' } }}
+                sx={{ mt: 2, bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
               >
                 {person.online ? 'Chat' : 'Unavailable'}
               </Button>

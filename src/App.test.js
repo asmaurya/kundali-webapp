@@ -218,6 +218,7 @@ test('services open dedicated reports, astrologers and remedies pages', () => {
   renderApp('/services');
   fireEvent.click(screen.getByText(/detailed reports/i));
   expect(screen.getByRole('heading', { name: /detailed reports/i })).toBeInTheDocument();
+  expect(screen.getAllByRole('columnheader', { name: /prepared by/i }).length).toBeGreaterThan(0);
 });
 
 test('chat composer exposes family context chips', () => {
