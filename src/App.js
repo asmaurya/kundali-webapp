@@ -16,8 +16,13 @@ import FamilyListPage from './components/FamilyListPage';
 import KundaliChartPage from './components/KundaliChartPage';
 import SubscriptionPage from './components/SubscriptionPage';
 import SupportPage from './components/SupportPage';
+import SettingsPage from './components/SettingsPage';
 import { ChatProvider, useChat } from './chatStore';
+import { LocaleProvider, useLocale } from './i18n/LocaleContext';
+import { fetchRemoteAccount, pushRemoteAccount } from './api';
 import {
+  applyRemoteAccount,
+  buildAccountSnapshot,
   clearBetaSession,
   getBirthDetails,
   getSession,
@@ -27,29 +32,6 @@ import {
   saveBirthDetails,
   saveSession,
 } from './betaSession';
-
-const NAV_ITEMS = [
-  { label: 'Chat', path: '/', icon: 'chat' },
-  { label: 'Kundali Chart', path: '/kundali', icon: 'kundali' },
-  { label: 'Family Members', path: '/family', icon: 'family' },
-  { label: 'Services', path: '/services', icon: 'services' },
-  { label: 'Subscription', path: '/subscription', icon: 'subscription' },
-  { label: 'Support', path: '/support', icon: 'support' },
-];
-
-const PAGE_TITLES = {
-  '/': 'Chat',
-  '/chat': 'Chat',
-  '/splash': 'Astro Chat',
-  '/invite': 'Beta access',
-  '/birth-details': 'Your Birth Details',
-  '/creating-chart': 'Creating Chart',
-  '/services': 'Our Services',
-  '/family': 'Family Members',
-  '/kundali': 'Kundali Chart',
-  '/subscription': 'Subscription',
-  '/support': 'Support',
-};
 
 const ONBOARDING_PATHS = new Set(['/splash', '/invite', '/birth-details', '/creating-chart']);
 const PUBLIC_PATHS = new Set(['/splash', '/invite']);
@@ -85,25 +67,57 @@ function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const { startChat, resetToDemo } = useChat();
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [session, setSession] = useState(() => getSession());
   const [onboarded, setOnboarded] = useState(() => isOnboardingComplete());
 
+  const navItems = useMemo(
+    () => [
+      { label: t('navChat'), path: '/', icon: 'chat' },
+      { label: t('navKundali'), path: '/kundali', icon: 'kundali' },
+      { label: t('navFamily'), path: '/family', icon: 'family' },
+      { label: t('navServices'), path: '/services', icon: 'services' },
+      { label: t('navSubscription'), path: '/subscription', icon: 'subscription' },
+      { label: t('navSupport'), path: '/support', icon: 'support' },
+      { label: t('navSettings'), path: '/settings', icon: 'settings' },
+    ],
+    [t]
+  );
+
+  const pageTitles = useMemo(
+    () => ({
+      '/': t('navChat'),
+      '/chat': t('navChat'),
+      '/splash': t('appName'),
+      '/invite': t('inviteTitle'),
+      '/birth-details': t('birthTitle'),
+      '/creating-chart': t('chartTitle'),
+      '/services': t('navServices'),
+      '/family': t('navFamily'),
+      '/kundali': t('navKundali'),
+      '/subscription': t('navSubscription'),
+      '/support': t('navSupport'),
+      '/settings': t('navSettings'),
+    }),
+    [t]
+  );
+
   const sidebarExpanded = isDesktop ? expanded : drawerOpen;
   const isChatPage = location.pathname === '/' || location.pathname === '/chat';
   const isOnboarding = ONBOARDING_PATHS.has(location.pathname);
-  const title = PAGE_TITLES[location.pathname] || 'Astro Chat';
+  const title = pageTitles[location.pathname] || t('appName');
   const user = useMemo(() => {
     const email = session?.email || '';
     const name = displayNameFromEmail(email);
     return {
       name,
       email,
-      plan: 'Beta',
+      plan: t('planBeta'),
       initials: (name.charAt(0) || 'B').toUpperCase(),
     };
-  }, [session]);
+  }, [session, t]);
 
   useEffect(() => {
     if (!isInvited() && !PUBLIC_PATHS.has(location.pathname)) {
@@ -143,9 +157,22 @@ function AppShell() {
   }, [navigate, resetToDemo]);
 
   const handleInviteSuccess = useCallback(
-    ({ email, inviteCode }) => {
+    async ({ email, inviteCode }) => {
       const next = saveSession({ email, inviteCode });
       setSession(next);
+      const remote = await fetchRemoteAccount(next);
+      if (remote) {
+        applyRemoteAccount(remote);
+        setOnboarded(isOnboardingComplete());
+        if (isOnboardingComplete()) {
+          navigate('/chat', { replace: true });
+          return;
+        }
+        if (getBirthDetails()) {
+          navigate('/creating-chart', { replace: true });
+          return;
+        }
+      }
       navigate('/birth-details', { replace: true });
     },
     [navigate]
@@ -154,6 +181,10 @@ function AppShell() {
   const handleBirthSubmit = useCallback(
     (details) => {
       saveBirthDetails(details);
+      const current = getSession();
+      if (current) {
+        pushRemoteAccount(current, buildAccountSnapshot());
+      }
       navigate('/creating-chart');
     },
     [navigate]
@@ -163,6 +194,10 @@ function AppShell() {
     (_chart) => {
       markOnboardingComplete();
       setOnboarded(true);
+      const current = getSession();
+      if (current) {
+        pushRemoteAccount(current, buildAccountSnapshot());
+      }
       startChat('astro-chat');
       navigate('/chat', { replace: true });
     },
@@ -201,7 +236,7 @@ function AppShell() {
 
       {showChrome && (
         <SidePanel
-          items={NAV_ITEMS}
+          items={navItems}
           activePath={location.pathname}
           expanded={sidebarExpanded}
           isDesktop={isDesktop}
@@ -306,6 +341,14 @@ function AppShell() {
               }
             />
             <Route
+              path="/settings"
+              element={
+                <RequireOnboarding>
+                  <SettingsPage onBack={() => navigate('/')} />
+                </RequireOnboarding>
+              }
+            />
+            <Route
               path="*"
               element={
                 <Navigate
@@ -329,9 +372,11 @@ function AppShell() {
 
 function App() {
   return (
-    <ChatProvider>
-      <AppShell />
-    </ChatProvider>
+    <LocaleProvider>
+      <ChatProvider>
+        <AppShell />
+      </ChatProvider>
+    </LocaleProvider>
   );
 }
 

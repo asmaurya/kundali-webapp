@@ -1,17 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, LinearProgress, Typography } from '@mui/material';
-import { createChart } from '../api';
-import { getBirthDetails, saveChart } from '../betaSession';
-
-const STEPS = [
-  'Calculating planetary positions',
-  'Generating birth chart (Kundli)',
-  'Saving your profile',
-];
+import { createChart, pushRemoteAccount } from '../api';
+import { buildAccountSnapshot, getBirthDetails, getSession, saveChart } from '../betaSession';
+import { useLocale } from '../i18n/LocaleContext';
 
 const MIN_VISIBLE_MS = 1200;
 
 function CreatingChartScreen({ onNext }) {
+  const { t } = useLocale();
+  const steps = [t('creatingStep1'), t('creatingStep2'), t('creatingStep3')];
   const [progress, setProgress] = useState(8);
   const [error, setError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
@@ -29,7 +26,7 @@ function CreatingChartScreen({ onNext }) {
 
     const birth = getBirthDetails();
     if (!birth?.date || !birth?.time || !birth?.place) {
-      setError('Birth details are missing. Go back and enter them again.');
+      setError(t('birthMissing'));
       return undefined;
     }
 
@@ -46,6 +43,10 @@ function CreatingChartScreen({ onNext }) {
         if (cancelled) return;
 
         saveChart(chart);
+        const session = getSession();
+        if (session) {
+          await pushRemoteAccount(session, buildAccountSnapshot());
+        }
         setProgress(100);
         clearInterval(progressTimer);
 
@@ -65,7 +66,9 @@ function CreatingChartScreen({ onNext }) {
       clearInterval(progressTimer);
       clearTimeout(finishTimer);
     };
-  }, [retryToken]);
+  }, [retryToken, t]);
+
+  const titleLines = t('creatingTitle').split('\n');
 
   return (
     <Box
@@ -85,7 +88,7 @@ function CreatingChartScreen({ onNext }) {
       <Box className="hill-deco" sx={{ opacity: 0.8 }} />
 
       <Box className="zodiac-wheel" sx={{ position: 'relative', zIndex: 1 }}>
-        <img src="/images/zodiac-wheel.png" alt="Zodiac wheel" width={300} height={300} />
+        <img src="/images/zodiac-wheel.png" alt="" width={300} height={300} />
       </Box>
 
       <Typography
@@ -99,9 +102,12 @@ function CreatingChartScreen({ onNext }) {
           color: '#1E1B2E',
         }}
       >
-        Creating Your
-        <br />
-        Astrology Chart...
+        {titleLines.map((line) => (
+          <React.Fragment key={line}>
+            {line}
+            <br />
+          </React.Fragment>
+        ))}
       </Typography>
 
       {error ? (
@@ -115,7 +121,7 @@ function CreatingChartScreen({ onNext }) {
             onClick={() => setRetryToken((value) => value + 1)}
             sx={{ mt: 2, bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
           >
-            Try again
+            {t('tryAgain')}
           </Button>
         </Box>
       ) : (
@@ -134,7 +140,7 @@ function CreatingChartScreen({ onNext }) {
           </Box>
 
           <Box sx={{ position: 'relative', zIndex: 1, mt: 3, textAlign: 'left' }}>
-            {STEPS.map((step, index) => (
+            {steps.map((step, index) => (
               <Typography key={step} sx={{ fontSize: 16, color: '#1E1B2E', lineHeight: 2 }}>
                 {progress > index * 30 ? '✓' : '○'} &nbsp;{step}
               </Typography>

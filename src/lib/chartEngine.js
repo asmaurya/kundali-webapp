@@ -93,6 +93,14 @@ function norm360(deg) {
   return x < 0 ? x + 360 : x;
 }
 
+function formatTzOffset(hours) {
+  const sign = hours < 0 ? '-' : '+';
+  const abs = Math.abs(hours);
+  const h = Math.floor(abs);
+  const m = Math.round((abs - h) * 60);
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function julianDay(date) {
   return date.getTime() / 86400000 + 2440587.5;
 }
@@ -111,7 +119,32 @@ export function meanNodeLongitude(date) {
   );
 }
 
-export function resolvePlace(place) {
+/**
+ * Resolve lat/lon/tz for a birth place.
+ * Prefer explicit coordinates from Google Places (or Nominatim) when provided.
+ */
+export function resolvePlace(place, coords) {
+  if (
+    coords &&
+    Number.isFinite(Number(coords.lat)) &&
+    Number.isFinite(Number(coords.lon))
+  ) {
+    const lat = Number(coords.lat);
+    const lon = Number(coords.lon);
+    const tzOffsetHours = Number.isFinite(Number(coords.tzOffsetHours))
+      ? Number(coords.tzOffsetHours)
+      : estimateTzOffsetHours(lat, lon, coords.countryCode);
+    return {
+      lat,
+      lon,
+      tzOffsetHours,
+      label: place || coords.label || 'Selected place',
+      approx: false,
+      placeId: coords.placeId || null,
+      source: coords.source || 'places',
+    };
+  }
+
   const key = String(place || '')
     .toLowerCase()
     .split(',')[0]
@@ -124,6 +157,27 @@ export function resolvePlace(place) {
   );
   if (matched) return { ...CITY_COORDS[matched], label: place };
   return { ...CITY_COORDS.delhi, label: place || 'Delhi, India', approx: true };
+}
+
+/** Rough timezone when Places Time Zone API is unavailable. */
+export function estimateTzOffsetHours(lat, lon, countryCode) {
+  const cc = String(countryCode || '').toUpperCase();
+  if (cc === 'IN' || cc === 'IND') return 5.5;
+  if (cc === 'NP') return 5.75;
+  if (cc === 'LK') return 5.5;
+  if (cc === 'BD') return 6;
+  if (cc === 'PK') return 5;
+  if (cc === 'AE') return 4;
+  if (cc === 'GB') return 0;
+  if (cc === 'US') {
+    // Contiguous US approximation from longitude.
+    if (lon < -112.5) return -8;
+    if (lon < -97.5) return -7;
+    if (lon < -82.5) return -6;
+    return -5;
+  }
+  const rough = Math.round((Number(lon) || 0) / 15);
+  return Math.max(-12, Math.min(14, rough));
 }
 
 /** Parse HTML date/time values and common locale variants into a valid UTC Date. */
@@ -194,8 +248,16 @@ export function parseBirthDateTime(dateInput, timeInput) {
   return { year, month, day, hour, minute };
 }
 
-export function birthToUtcDate({ date, time, place }) {
-  const loc = resolvePlace(place);
+export function birthToUtcDate({ date, time, place, lat, lon, tzOffsetHours, countryCode, placeId, source }) {
+  const loc = resolvePlace(place, {
+    lat,
+    lon,
+    tzOffsetHours,
+    countryCode,
+    placeId,
+    source,
+    label: place,
+  });
   const parts = parseBirthDateTime(date, time);
   const utcMs =
     Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute) -
@@ -279,7 +341,7 @@ function vimshottariFromMoon(moonLon, birthDate) {
 }
 
 /**
- * @param {{ date: string, time: string, place: string }} birth
+ * @param {{ date: string, time: string, place: string, lat?: number, lon?: number, tzOffsetHours?: number, countryCode?: string, placeId?: string }} birth
  */
 export function generateChart(birth) {
   if (!birth || !birth.date || !birth.time || !birth.place) {
@@ -362,10 +424,11 @@ export function generateChart(birth) {
       utc: utc.toISOString(),
       lat: loc.lat,
       lon: loc.lon,
-      tz: `+${String(Math.floor(loc.tzOffsetHours)).padStart(2, '0')}:${String(
-        Math.round((loc.tzOffsetHours % 1) * 60)
-      ).padStart(2, '0')}`,
+      tz: formatTzOffset(loc.tzOffsetHours),
+      tzOffsetHours: loc.tzOffsetHours,
       place_approx: Boolean(loc.approx),
+      placeId: loc.placeId || birth.placeId || null,
+      source: loc.source || null,
     },
     lagna: {
       rashi: lagna.rashi,

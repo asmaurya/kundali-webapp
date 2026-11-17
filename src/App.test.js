@@ -47,7 +47,53 @@ beforeEach(() => {
       };
     }
     if (url.includes('/api/health')) {
-      return { ok: true, async json() { return { ok: true, llm: false }; } };
+      return { ok: true, async json() { return { ok: true, llm: false, places: false }; } };
+    }
+    if (url.includes('/api/settings') || url.includes('/api/account')) {
+      return {
+        ok: true,
+        async json() {
+          return { settings: { locale: 'en' }, account: null };
+        },
+      };
+    }
+    if (url.includes('/api/places/autocomplete')) {
+      return {
+        ok: true,
+        async json() {
+          return {
+            provider: 'nominatim',
+            predictions: [
+              {
+                placeId: 'nominatim:1',
+                description: 'Jaipur, Rajasthan, India',
+                lat: 26.91,
+                lon: 75.79,
+                countryCode: 'IN',
+                provider: 'nominatim',
+              },
+            ],
+          };
+        },
+      };
+    }
+    if (url.includes('/api/places/details')) {
+      return {
+        ok: true,
+        async json() {
+          return {
+            place: {
+              placeId: 'nominatim:1',
+              label: 'Jaipur, Rajasthan, India',
+              lat: 26.91,
+              lon: 75.79,
+              countryCode: 'IN',
+              tzOffsetHours: 5.5,
+              source: 'nominatim',
+            },
+          };
+        },
+      };
     }
     return { ok: false, status: 404, async json() { return {}; } };
   });
@@ -92,7 +138,15 @@ test('a new chat defaults to the AI astrologer', () => {
 test('side panel lists every destination and puts Services above Subscription', () => {
   renderApp('/');
   const nav = openSidePanel();
-  const labels = ['Chat', 'Services', 'Family Members', 'Kundali Chart', 'Subscription', 'Support'];
+  const labels = [
+    'Chat',
+    'Services',
+    'Family Members',
+    'Kundali Chart',
+    'Subscription',
+    'Support',
+    'Settings',
+  ];
   labels.forEach((label) => {
     expect(within(nav).getByRole('button', { name: label })).toBeInTheDocument();
   });
@@ -153,7 +207,7 @@ test('unguarded routes redirect to splash when there is no invite', () => {
   expect(screen.getByRole('button', { name: /get started/i })).toBeInTheDocument();
 });
 
-test('a valid invite code unlocks birth details', () => {
+test('a valid invite code unlocks birth details', async () => {
   clearBetaSession();
   renderApp('/invite');
   fireEvent.change(screen.getByLabelText(/invite code/i), {
@@ -162,8 +216,10 @@ test('a valid invite code unlocks birth details', () => {
   fireEvent.change(screen.getByLabelText(/email/i), {
     target: { value: 'tester@example.com' },
   });
-  fireEvent.click(screen.getByRole('button', { name: /continue/i }));
-  expect(screen.getByRole('heading', { name: /your birth details/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /enter beta/i }));
+  await waitFor(() => {
+    expect(screen.getByRole('heading', { name: /your birth details/i })).toBeInTheDocument();
+  });
 });
 
 test('returning users with a completed session land on chat from splash', () => {
@@ -216,7 +272,11 @@ test('first-run onboarding reaches chat after creating a chart', async () => {
   fireEvent.change(screen.getByLabelText(/email/i), {
     target: { value: 'first@example.com' },
   });
-  fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+  fireEvent.click(screen.getByRole('button', { name: /enter beta/i }));
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/date of birth/i)).toBeInTheDocument();
+  });
 
   fireEvent.change(screen.getByLabelText(/date of birth/i), {
     target: { value: '1988-08-14' },
@@ -237,4 +297,28 @@ test('first-run onboarding reaches chat after creating a chart', async () => {
     },
     { timeout: 8000 }
   );
+});
+
+test('settings page can switch language to Hindi', async () => {
+  renderApp('/settings');
+  expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'हिन्दी' }));
+  await waitFor(() => {
+    expect(screen.getByRole('heading', { name: 'सेटिंग्स' })).toBeInTheDocument();
+  });
+});
+
+test('kundali page shows the North Indian diamond chart when a chart exists', () => {
+  const { generateChart } = require('./lib/chartEngine');
+  const { saveChart } = require('./betaSession');
+  saveChart(
+    generateChart({
+      date: '1988-08-14',
+      time: '12:45',
+      place: 'Jaipur, Rajasthan, India',
+    })
+  );
+  renderApp('/kundali');
+  expect(screen.getByLabelText(/north indian natal chart/i)).toBeInTheDocument();
+  expect(screen.getByText(/north indian whole-sign chart/i)).toBeInTheDocument();
 });

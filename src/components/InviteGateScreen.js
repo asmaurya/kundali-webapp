@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Alert, Box, Button, TextField, Typography } from '@mui/material';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { validateInviteCode } from '../betaSession';
+import { useLocale } from '../i18n/LocaleContext';
 
 function InviteGateScreen({ onSuccess }) {
+  const { t } = useLocale();
   const [inviteCode, setInviteCode] = useState('');
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
@@ -13,7 +15,7 @@ function InviteGateScreen({ onSuccess }) {
   const handleSubmit = (event) => {
     event.preventDefault();
     if (!validateInviteCode(inviteCode)) {
-      setError('That invite code is not valid. Check the code from your beta invite email.');
+      setError(t('inviteInvalid'));
       return;
     }
     setError('');
@@ -63,11 +65,9 @@ function InviteGateScreen({ onSuccess }) {
           </Box>
           <Box>
             <Typography component="h2" sx={{ fontSize: 22, fontWeight: 700, color: '#1E1B2E' }}>
-              Beta access
+              {t('inviteTitle')}
             </Typography>
-            <Typography sx={{ fontSize: 14, color: '#3A3550' }}>
-              Enter your invite code and email to continue.
-            </Typography>
+            <Typography sx={{ fontSize: 14, color: '#3A3550' }}>{t('inviteSubtitle')}</Typography>
           </Box>
         </Box>
 
@@ -80,7 +80,7 @@ function InviteGateScreen({ onSuccess }) {
         <TextField
           fullWidth
           required
-          label="Invite code"
+          label={t('inviteCode')}
           value={inviteCode}
           onChange={(event) => setInviteCode(event.target.value)}
           autoComplete="off"
@@ -90,7 +90,7 @@ function InviteGateScreen({ onSuccess }) {
           fullWidth
           required
           type="email"
-          label="Email"
+          label={t('email')}
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           autoComplete="email"
@@ -104,11 +104,11 @@ function InviteGateScreen({ onSuccess }) {
           disabled={!canSubmit}
           sx={{ py: 1.4, fontSize: 17, bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
         >
-          Continue
+          {t('inviteContinue')}
         </Button>
 
         <Typography sx={{ mt: 2, fontSize: 12, color: '#4A4560', textAlign: 'center' }}>
-          Private beta — charts and chats stay on this device for now. No billing in this build.
+          {t('invitePrivacy')}
         </Typography>
       </Box>
     </Box>

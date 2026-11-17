@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   getChart,
+  getSettings,
   loadActiveId,
   loadConversations,
   saveActiveId,
@@ -279,10 +280,12 @@ export function ChatProvider({ children }) {
       let replyText = scriptedReplyFor(trimmed);
       if (astrologer.type === 'ai') {
         try {
+          const locale = getSettings()?.locale === 'hi' ? 'hi' : 'en';
           const result = await askOracle({
             question: trimmed,
             chart: getChart(),
             history: active.messages,
+            locale,
           });
           replyText = result.text;
         } catch {

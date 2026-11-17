@@ -8,17 +8,19 @@ Targets the FigCraft extract in [`UI_SPEC.md`](./UI_SPEC.md). Not every screen i
 
 - **Invite gate:** code `KUNDALI-BETA` (override with `REACT_APP_BETA_INVITE_CODE`) + email, stored in `localStorage`.
 - **First run:** Splash → Invite → Birth details → Creating chart → Chat.
-- **Returning users:** open Chat directly when onboarding is complete.
-- **Chart:** real Lahiri / whole-sign natal chart computed on-device (`astronomy-engine`).
+- **Returning users:** open Chat directly when onboarding is complete; same invite email restores language, birth details and chart from the Worker.
+- **Chart:** real Lahiri / whole-sign natal chart in **North Indian diamond** layout, computed on-device (`astronomy-engine`).
+- **Language:** English / Hindi (Settings). Preference syncs across devices via `/api/settings` + `/api/account`.
+- **Place of birth:** autocomplete via Worker `/api/places/*` (Google Places when `GOOGLE_PLACES_API_KEY` is set; otherwise OpenStreetMap Nominatim). Selected place passes lat/lon/tz into the chart.
 - **Answers:** `/api/chat` on the Worker uses the chart context; optional `OPENAI_API_KEY` Worker secret for LLM replies (otherwise chart-aware local replies). No provider key in the browser.
-- **Persistence:** birth details, chart, chats and family members survive refresh until logout.
+- **Persistence:** birth details, chart, chats, family and settings survive refresh; account snapshot syncs to the Worker for cross-device recall.
 - **Subscription:** UI preview only — no billing.
 - **Feedback:** Support → Send feedback (`REACT_APP_FEEDBACK_EMAIL`, default owner inbox).
 
 ## Features / routes
 
 - Splash, invite, birth details, chart creation, chat
-- Side panel: Chat, Kundali Chart, Family Members, Services, Subscription, Support
+- Side panel: Chat, Kundali Chart, Family Members, Services, Subscription, Support, Settings
 - Responsive shell (mobile drawer / desktop rail)
 
 ## Getting started
@@ -37,6 +39,16 @@ CI=true npm run build
 Tester checklist: [`docs/BETA_SMOKE.md`](./docs/BETA_SMOKE.md).  
 In-repo Worker assets config: [`wrangler.toml`](./wrangler.toml) (CRA `build/` as SPA).
 
-Workers Builds should run `CI=true npm run build` and publish via `wrangler.toml` (Worker + `build/` assets). Optional Cloudflare secret: `OPENAI_API_KEY` (and `OPENAI_MODEL`, default `gpt-4o-mini`). Raspberry Pi Docker deploy ([`DEPLOY.md`](./DEPLOY.md)) is legacy and **not** used for beta testing.
+Workers Builds should run `CI=true npm run build` and publish via `wrangler.toml` (Worker + `build/` assets). Optional Cloudflare secrets:
+
+| Secret | Purpose |
+|--------|---------|
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | Live LLM answers (default model `gpt-4o-mini`) |
+| `GOOGLE_PLACES_API_KEY` | Google Places Autocomplete + Place Details + Time Zone |
+| `BETA_INVITE_CODE` | Server-side invite check for sync/Places routes |
+
+Optional KV namespace bound as `SETTINGS` makes account sync durable across colos; without it the Worker uses the Cache API best-effort store.
+
+Raspberry Pi Docker deploy ([`DEPLOY.md`](./DEPLOY.md)) is legacy and **not** used for beta testing.
 
 This repo is the `webapp/` child of [asmaurya/kundali-proj](https://github.com/asmaurya/kundali-proj).

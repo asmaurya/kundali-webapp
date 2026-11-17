@@ -11,21 +11,23 @@ import HealthAndSafetyIcon from '@mui/icons-material/HealthAndSafety';
 import SpaIcon from '@mui/icons-material/Spa';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { ASTROLOGERS, useChat } from '../chatStore';
-
-const SUGGESTIONS = [
-  { label: 'Career', icon: WorkIcon },
-  { label: 'Relationships', icon: FavoriteBorderIcon },
-  { label: 'Health', icon: HealthAndSafetyIcon },
-  { label: 'Remedies', icon: SpaIcon },
-  { label: 'General guidance', icon: StarBorderIcon },
-];
+import { useLocale } from '../i18n/LocaleContext';
 
 function ChatInterface() {
   const location = useLocation();
+  const { t } = useLocale();
   const { conversations, active, openConversation, startChat, sendMessage } = useChat();
   const [draft, setDraft] = useState('');
   const requested = location.state && location.state.astrologerId;
   const requestedHandled = useRef(false);
+
+  const SUGGESTIONS = [
+    { label: t('career'), icon: WorkIcon },
+    { label: t('relationships'), icon: FavoriteBorderIcon },
+    { label: t('health'), icon: HealthAndSafetyIcon },
+    { label: t('remedies'), icon: SpaIcon },
+    { label: t('generalGuidance'), icon: StarBorderIcon },
+  ];
 
   useEffect(() => {
     if (!requested || requestedHandled.current) return;
@@ -56,7 +58,7 @@ function ChatInterface() {
     <Box className="chat-page">
       <aside className="chats-rail" aria-label="Chat history">
         <Box className="chats-rail__head">
-          <span className="chats-rail__label">Chats</span>
+          <span className="chats-rail__label">{t('chats')}</span>
           <Tooltip title="Start a new chat with the AI astrologer">
             <IconButton
               size="small"
@@ -205,7 +207,7 @@ function ChatInterface() {
             </Tooltip>
             <input
               className="composer__input"
-              placeholder="Ask about your chart…"
+              placeholder={t('askPlaceholder')}
               aria-label="Message"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}

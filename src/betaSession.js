@@ -11,6 +11,7 @@ export const STORAGE_KEYS = {
   conversations: 'kundali.beta.conversations',
   activeId: 'kundali.beta.activeId',
   family: 'kundali.beta.family',
+  settings: 'kundali.beta.settings',
 };
 
 function readJson(key, fallback = null) {
@@ -106,12 +107,56 @@ export function saveFamilyMembers(members) {
   writeJson(STORAGE_KEYS.family, members);
 }
 
+export function getSettings() {
+  return readJson(STORAGE_KEYS.settings, { locale: 'en' });
+}
+
+export function saveSettings(settings) {
+  const next = {
+    locale: settings?.locale === 'hi' ? 'hi' : 'en',
+    updatedAt: new Date().toISOString(),
+  };
+  writeJson(STORAGE_KEYS.settings, next);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('kundali-settings', { detail: next }));
+  }
+  return next;
+}
+
+/** Apply a remote account snapshot onto this device (cross-device restore). */
+export function applyRemoteAccount(remote) {
+  if (!remote || typeof remote !== 'object') return;
+  if (remote.settings) saveSettings(remote.settings);
+  if (remote.birth) saveBirthDetails(remote.birth);
+  if (remote.chart) saveChart(remote.chart);
+  if (remote.onboardingComplete) markOnboardingComplete();
+  if (Array.isArray(remote.conversations)) saveConversations(remote.conversations);
+  if (remote.activeId) saveActiveId(remote.activeId);
+  if (Array.isArray(remote.family)) saveFamilyMembers(remote.family);
+}
+
+/** Snapshot of account data to sync to the Worker. */
+export function buildAccountSnapshot() {
+  return {
+    settings: getSettings(),
+    birth: getBirthDetails(),
+    chart: getChart(),
+    onboardingComplete: isOnboardingComplete(),
+    conversations: loadConversations(),
+    activeId: loadActiveId(),
+    family: loadFamilyMembers(null),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 /** Seed a completed beta session for tests. */
 export function seedCompletedBetaSession({
   email = 'beta@example.com',
   birth = { date: '1990-01-15', time: '10:30', place: 'Jaipur, Rajasthan, India' },
+  locale = 'en',
 } = {}) {
   saveSession({ email, inviteCode: BETA_INVITE_CODE });
   saveBirthDetails(birth);
+  saveSettings({ locale });
   markOnboardingComplete();
 }

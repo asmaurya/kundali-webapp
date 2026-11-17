@@ -5,6 +5,36 @@ test('resolves known Indian cities', () => {
   expect(resolvePlace('Bengaluru').tzOffsetHours).toBe(5.5);
 });
 
+test('prefers explicit Places coordinates over city lookup', () => {
+  const loc = resolvePlace('Custom Hamlet', {
+    lat: 18.52,
+    lon: 73.85,
+    tzOffsetHours: 5.5,
+    placeId: 'google:abc',
+    source: 'google',
+  });
+  expect(loc.lat).toBeCloseTo(18.52, 2);
+  expect(loc.lon).toBeCloseTo(73.85, 2);
+  expect(loc.approx).toBe(false);
+  expect(loc.source).toBe('google');
+});
+
+test('generateChart uses provided lat/lon from Places', () => {
+  const chart = generateChart({
+    date: '1988-08-14',
+    time: '12:45',
+    place: 'Pune, Maharashtra, India',
+    lat: 18.5204,
+    lon: 73.8567,
+    tzOffsetHours: 5.5,
+    placeId: 'test-place',
+    source: 'google',
+  });
+  expect(chart.birth.lat).toBeCloseTo(18.52, 1);
+  expect(chart.birth.place_approx).toBe(false);
+  expect(chart.birth.placeId).toBe('test-place');
+});
+
 test('lahiri ayanamsa is in a sensible range for modern dates', () => {
   const aya = lahiriAyanamsa(new Date('1988-08-14T07:15:00Z'));
   expect(aya).toBeGreaterThan(22);

@@ -1,5 +1,9 @@
 # Cloudflare Worker + SPA assets. Workers Builds: npm ci && CI=true npm run build
-# Optional secret: OPENAI_API_KEY (and OPENAI_MODEL) for live LLM answers.
+# Optional secrets:
+#   OPENAI_API_KEY / OPENAI_MODEL — live LLM answers
+#   GOOGLE_PLACES_API_KEY — Google Places + Time Zone (Nominatim fallback if unset)
+#   BETA_INVITE_CODE — override invite code server-side
+# Optional KV binding SETTINGS — durable cross-device account sync (Cache API used otherwise)
 name = "kundali-webapp"
 main = "worker/index.js"
 compatibility_date = "2025-11-01"

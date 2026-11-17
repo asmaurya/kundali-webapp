@@ -1,9 +1,12 @@
 /**
- * Cloudflare Worker: SPA assets + /api/chat (LLM if OPENAI_API_KEY is set).
- * Chart math runs in the browser; the Worker only answers with chart context.
+ * Cloudflare Worker: SPA assets + chat + settings sync + Places proxy.
+ * Chart math runs in the browser; the Worker answers with chart context,
+ * syncs beta account settings across devices, and proxies place search.
  */
 
 const TONE = `Be accurate and neutral. State only what the chart supports. Do not add reassurance or positivity the chart does not support. Do not give exact dates, amounts, scores or exact outcomes; give periods and tendencies. Do not discuss death, lifespan, pregnancy, medical or psychological diagnoses. Do not promise outcomes. Religion-neutral: no deities or temple prescriptions; practical habits are fine. Keep answers under 120 words.`;
+
+const DEFAULT_INVITE = 'KUNDALI-BETA';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -18,7 +21,15 @@ function json(data, status = 200) {
   });
 }
 
-function crisisReply() {
+function crisisReply(locale) {
+  if (locale === 'hi') {
+    return {
+      text:
+        'यह समय भारी लग रहा है। संकट सहायता के लिए मैं सही जगह नहीं हूँ। कृपया अभी स्थानीय आपातकालीन सेवाओं या किसी विश्वसनीय व्यक्ति से संपर्क करें। भारत में आप iCall पर 9152987821 कॉल कर सकते हैं। जब आप सुरक्षित हों, हम कुंडली पर फिर बात कर सकते हैं।',
+      provider: 'guardrail',
+      used_llm: false,
+    };
+  }
   return {
     text:
       'I hear that this feels heavy. I am not the right place for crisis support. Please contact local emergency services or a trusted person now. In India you can call iCall at 9152987821. When you are safer, we can talk about the chart again.',
@@ -27,12 +38,28 @@ function crisisReply() {
   };
 }
 
-function chartAwareFallback(question, chartContext) {
+function chartAwareFallback(question, chartContext, locale) {
   const q = String(question || '').toLowerCase();
   const ctx = String(chartContext || '');
-  const lagna = (ctx.match(/Lagna:\s*(.+)/i) || [])[1] || 'your lagna';
-  const moon = (ctx.match(/Moon:\s*(.+)/i) || [])[1] || 'your Moon sign';
-  const dasha = (ctx.match(/Current dasha:\s*(.+)/i) || [])[1] || 'the current dasha';
+  const lagna = (ctx.match(/Lagna:\s*(.+)/i) || [])[1] || (locale === 'hi' ? 'आपका लग्न' : 'your lagna');
+  const moon = (ctx.match(/Moon:\s*(.+)/i) || [])[1] || (locale === 'hi' ? 'आपकी चंद्र राशि' : 'your Moon sign');
+  const dasha = (ctx.match(/Current dasha:\s*(.+)/i) || [])[1] || (locale === 'hi' ? 'वर्तमान दशा' : 'the current dasha');
+
+  if (locale === 'hi') {
+    if (/career|job|work|promotion|business|करियर|नौकरी|व्यापार/.test(q)) {
+      return `कुंडली (${lagna} लग्न; ${dasha}) के अनुसार दशम भाव स्थिर कौशल बढ़ाने के पक्ष में है। इस दशा में प्रगति क्रमशः दिखेगी। चाहें तो आगे उपाय या समय-विषय पर बात करें।`;
+    }
+    if (/marriage|relationship|partner|love|compatibility|विवाह|रिश्ता|प्रेम/.test(q)) {
+      return `चंद्र ${moon} और लग्न ${lagna} के साथ सप्तम भाव जल्दबाज़ी से अधिक स्पष्ट संवाद का पक्षधर है। दोनों कुंडलियों की तुलना से अनुकूलता बेहतर समझ आती है।`;
+    }
+    if (/health|sleep|stress|anxiety|स्वास्थ्य|नींद|तनाव/.test(q)) {
+      return `चंद्र ${moon} अक्सर संवेदनशील तंत्रिका तंत्र का संकेत देता है। नियमित नींद और हल्का रात्रि भोजन अनुमानित रत्नों से अधिक सहायक है। यह कुंडली मार्गदर्शन है, चिकित्सा निदान नहीं।`;
+    }
+    if (/remedy|remedies|donation|mantra|gemstone|उपाय|दान|मंत्र/.test(q)) {
+      return `इस कुंडली के लिए शांत शनिवार की आदतें और घर पर दीपक के लिए तेल या अन्न का सादा दान उपयुक्त आरंभिक उपाय हैं। इन्हें अनुशासन का सहारा मानें, गारंटी नहीं।`;
+    }
+    return `आपकी कुंडली (${lagna} लग्न; चंद्र ${moon}; ${dasha}) के आधार पर नोट किया। करियर, संबंध, स्वास्थ्य या उपाय पूछें — उत्तर इन्हीं स्थितियों पर आधारित होंगे।`;
+  }
 
   if (/career|job|work|promotion|business/.test(q)) {
     return `From the chart (${lagna} lagna; ${dasha}), the 10th-house picture favours steady skill-building over abrupt leaps. Progress is likely to feel gradual while this dasha runs. I can speak to remedies or timing themes next if you want.`;
@@ -49,14 +76,19 @@ function chartAwareFallback(question, chartContext) {
   return `Noted against your chart (${lagna} lagna; Moon ${moon}; ${dasha}). Ask about career, relationships, health, or remedies for a more focused reading grounded in these placements.`;
 }
 
-async function openAiReply(env, question, chartContext, history) {
+async function openAiReply(env, question, chartContext, history, locale) {
   const key = env.OPENAI_API_KEY;
   if (!key) return null;
+
+  const langLine =
+    locale === 'hi'
+      ? 'Reply in clear Hindi (Devanagari). Keep Jyotish terms (lagna, dasha, nakshatra) as commonly used.'
+      : 'Reply in clear English.';
 
   const messages = [
     {
       role: 'system',
-      content: `${TONE}\n\nNatal chart context:\n${chartContext}`,
+      content: `${TONE}\n${langLine}\n\nNatal chart context:\n${chartContext}`,
     },
     ...(Array.isArray(history) ? history.slice(-8) : []),
     { role: 'user', content: question },
@@ -86,6 +118,61 @@ async function openAiReply(env, question, chartContext, history) {
   return { text, provider: 'openai', used_llm: true };
 }
 
+function expectedInvite(env) {
+  return String(env.BETA_INVITE_CODE || DEFAULT_INVITE).trim().toUpperCase();
+}
+
+function authorizeBeta(body, env) {
+  const email = String(body?.email || '')
+    .trim()
+    .toLowerCase();
+  const invite = String(body?.inviteCode || '')
+    .trim()
+    .toUpperCase();
+  if (!email.includes('@')) return null;
+  if (invite !== expectedInvite(env)) return null;
+  return email;
+}
+
+function accountCacheKey(email) {
+  return new Request(`https://kundali-beta.internal/account/${encodeURIComponent(email)}`);
+}
+
+async function readAccountStore(env, email) {
+  if (env.SETTINGS) {
+    const raw = await env.SETTINGS.get(`account:${email}`, 'json');
+    if (raw) return raw;
+  }
+  try {
+    const cached = await caches.default.match(accountCacheKey(email));
+    if (cached) return cached.json();
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function writeAccountStore(env, email, account) {
+  const payload = { ...account, email, updatedAt: new Date().toISOString() };
+  if (env.SETTINGS) {
+    await env.SETTINGS.put(`account:${email}`, JSON.stringify(payload));
+  }
+  try {
+    await caches.default.put(
+      accountCacheKey(email),
+      new Response(JSON.stringify(payload), {
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'max-age=31536000',
+        },
+      })
+    );
+  } catch {
+    // Cache API may be unavailable in some runtimes; KV path still works.
+  }
+  return payload;
+}
+
 async function handleChat(request, env) {
   const body = await request.json().catch(() => null);
   if (!body || !body.question) {
@@ -93,18 +180,18 @@ async function handleChat(request, env) {
   }
 
   const question = String(body.question).trim();
-  if (/suicide|kill myself|self-harm|end my life|want to die/i.test(question)) {
-    return json(crisisReply());
+  const locale = body.locale === 'hi' ? 'hi' : 'en';
+  if (/suicide|kill myself|self-harm|end my life|want to die|आत्महत्या|मरना चाहता/i.test(question)) {
+    return json(crisisReply(locale));
   }
 
   const chartContext = body.chartContext || 'No chart provided.';
   try {
-    const llm = await openAiReply(env, question, chartContext, body.history);
+    const llm = await openAiReply(env, question, chartContext, body.history, locale);
     if (llm) return json(llm);
   } catch (error) {
-    // Fall through to chart-aware local reply
     return json({
-      text: chartAwareFallback(question, chartContext),
+      text: chartAwareFallback(question, chartContext, locale),
       provider: 'chart-fallback',
       used_llm: false,
       warning: String(error.message || error),
@@ -112,10 +199,236 @@ async function handleChat(request, env) {
   }
 
   return json({
-    text: chartAwareFallback(question, chartContext),
+    text: chartAwareFallback(question, chartContext, locale),
     provider: 'chart-local',
     used_llm: false,
   });
+}
+
+async function handleSettings(request, env) {
+  const body = await request.json().catch(() => null);
+  const email = authorizeBeta(body, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+
+  const existing = (await readAccountStore(env, email)) || {};
+  if (body.action === 'get') {
+    return json({
+      settings: existing.settings || { locale: 'en' },
+      updatedAt: existing.updatedAt || null,
+    });
+  }
+  if (body.action === 'put') {
+    const locale = body.settings?.locale === 'hi' ? 'hi' : 'en';
+    const settings = { locale, updatedAt: new Date().toISOString() };
+    const saved = await writeAccountStore(env, email, { ...existing, settings });
+    return json({ ok: true, settings: saved.settings });
+  }
+  return json({ error: 'action must be get or put' }, 400);
+}
+
+async function handleAccount(request, env) {
+  const body = await request.json().catch(() => null);
+  const email = authorizeBeta(body, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+
+  if (body.action === 'get') {
+    const account = await readAccountStore(env, email);
+    return json({ account: account || null });
+  }
+  if (body.action === 'put') {
+    if (!body.account || typeof body.account !== 'object') {
+      return json({ error: 'account is required' }, 400);
+    }
+    const saved = await writeAccountStore(env, email, body.account);
+    return json({ ok: true, account: saved });
+  }
+  return json({ error: 'action must be get or put' }, 400);
+}
+
+function estimateTzOffsetHours(lat, lon, countryCode) {
+  const cc = String(countryCode || '').toUpperCase();
+  if (cc === 'IN' || cc === 'IND') return 5.5;
+  if (cc === 'NP') return 5.75;
+  if (cc === 'LK') return 5.5;
+  if (cc === 'BD') return 6;
+  if (cc === 'PK') return 5;
+  if (cc === 'AE') return 4;
+  if (cc === 'GB') return 0;
+  const rough = Math.round((Number(lon) || 0) / 15);
+  return Math.max(-12, Math.min(14, rough));
+}
+
+async function googleTimezone(env, lat, lon) {
+  const key = env.GOOGLE_PLACES_API_KEY;
+  if (!key) return null;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const url = `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lon}&timestamp=${timestamp}&key=${key}`;
+  const response = await fetch(url);
+  if (!response.ok) return null;
+  const data = await response.json();
+  if (data.status !== 'OK') return null;
+  const seconds = Number(data.rawOffset || 0) + Number(data.dstOffset || 0);
+  return seconds / 3600;
+}
+
+async function googleAutocomplete(env, input) {
+  const key = env.GOOGLE_PLACES_API_KEY;
+  if (!key) return null;
+  const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
+  url.searchParams.set('input', input);
+  url.searchParams.set('types', '(cities)');
+  url.searchParams.set('key', key);
+  const response = await fetch(url.toString());
+  if (!response.ok) return null;
+  const data = await response.json();
+  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') return null;
+  return (data.predictions || []).map((item) => ({
+    placeId: item.place_id,
+    description: item.description,
+    provider: 'google',
+  }));
+}
+
+async function googleDetails(env, placeId) {
+  const key = env.GOOGLE_PLACES_API_KEY;
+  if (!key) return null;
+  const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
+  url.searchParams.set('place_id', placeId);
+  url.searchParams.set('fields', 'formatted_address,geometry,address_component,name');
+  url.searchParams.set('key', key);
+  const response = await fetch(url.toString());
+  if (!response.ok) return null;
+  const data = await response.json();
+  if (data.status !== 'OK' || !data.result) return null;
+  const result = data.result;
+  const lat = result.geometry?.location?.lat;
+  const lon = result.geometry?.location?.lng;
+  const country = (result.address_components || []).find((c) =>
+    (c.types || []).includes('country')
+  );
+  const countryCode = country?.short_name || '';
+  const tzOffsetHours =
+    (await googleTimezone(env, lat, lon)) ?? estimateTzOffsetHours(lat, lon, countryCode);
+  return {
+    placeId,
+    label: result.formatted_address || result.name,
+    lat,
+    lon,
+    countryCode,
+    tzOffsetHours,
+    source: 'google',
+  };
+}
+
+async function nominatimAutocomplete(input) {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', input);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('addressdetails', '1');
+  url.searchParams.set('limit', '6');
+  const response = await fetch(url.toString(), {
+    headers: {
+      'user-agent': 'KundaliWebappBeta/1.0 (birth-place lookup)',
+      accept: 'application/json',
+    },
+  });
+  if (!response.ok) return [];
+  const data = await response.json();
+  return (data || []).map((item) => ({
+    placeId: `nominatim:${item.place_id}`,
+    description: item.display_name,
+    provider: 'nominatim',
+    lat: Number(item.lat),
+    lon: Number(item.lon),
+    countryCode: item.address?.country_code?.toUpperCase() || '',
+  }));
+}
+
+async function nominatimDetails(placeId, hint) {
+  if (hint?.lat != null && hint?.lon != null) {
+    const lat = Number(hint.lat);
+    const lon = Number(hint.lon);
+    return {
+      placeId,
+      label: hint.description || hint.label,
+      lat,
+      lon,
+      countryCode: hint.countryCode || '',
+      tzOffsetHours: estimateTzOffsetHours(lat, lon, hint.countryCode),
+      source: 'nominatim',
+    };
+  }
+  const id = String(placeId || '').replace(/^nominatim:/, '');
+  const url = new URL('https://nominatim.openstreetmap.org/lookup');
+  url.searchParams.set('osm_ids', `N${id}`);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('addressdetails', '1');
+  // Nominatim place_id lookup via details endpoint
+  const searchUrl = new URL('https://nominatim.openstreetmap.org/details');
+  searchUrl.searchParams.set('place_id', id);
+  searchUrl.searchParams.set('format', 'json');
+  const response = await fetch(searchUrl.toString(), {
+    headers: {
+      'user-agent': 'KundaliWebappBeta/1.0 (birth-place lookup)',
+      accept: 'application/json',
+    },
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  const lat = Number(data.centroid?.coordinates?.[1] ?? data.lat);
+  const lon = Number(data.centroid?.coordinates?.[0] ?? data.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const countryCode = data.country_code?.toUpperCase() || '';
+  return {
+    placeId,
+    label: data.localname || data.names?.name || data.addresstags?.city || 'Selected place',
+    lat,
+    lon,
+    countryCode,
+    tzOffsetHours: estimateTzOffsetHours(lat, lon, countryCode),
+    source: 'nominatim',
+  };
+}
+
+async function handlePlacesAutocomplete(request, env) {
+  const body = await request.json().catch(() => null);
+  const email = authorizeBeta(body, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const input = String(body.input || '').trim();
+  if (input.length < 2) return json({ predictions: [], provider: 'none' });
+
+  const google = await googleAutocomplete(env, input);
+  if (google) {
+    return json({
+      predictions: google,
+      provider: 'google',
+      placesConfigured: true,
+    });
+  }
+
+  const nominatim = await nominatimAutocomplete(input);
+  return json({
+    predictions: nominatim,
+    provider: 'nominatim',
+    placesConfigured: Boolean(env.GOOGLE_PLACES_API_KEY),
+  });
+}
+
+async function handlePlacesDetails(request, env) {
+  const body = await request.json().catch(() => null);
+  const email = authorizeBeta(body, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const placeId = String(body.placeId || '').trim();
+  if (!placeId) return json({ error: 'placeId is required' }, 400);
+
+  if (!placeId.startsWith('nominatim:') && env.GOOGLE_PLACES_API_KEY) {
+    const place = await googleDetails(env, placeId);
+    if (place) return json({ place });
+  }
+
+  const place = await nominatimDetails(placeId, body);
+  if (!place) return json({ error: 'place not found' }, 404);
+  return json({ place });
 }
 
 export default {
@@ -130,6 +443,8 @@ export default {
       return json({
         ok: true,
         llm: Boolean(env.OPENAI_API_KEY),
+        places: Boolean(env.GOOGLE_PLACES_API_KEY),
+        settingsStore: Boolean(env.SETTINGS),
         service: 'kundali-webapp',
       });
     }
@@ -137,12 +452,23 @@ export default {
     if (url.pathname === '/api/chat' && request.method === 'POST') {
       return handleChat(request, env);
     }
+    if (url.pathname === '/api/settings' && request.method === 'POST') {
+      return handleSettings(request, env);
+    }
+    if (url.pathname === '/api/account' && request.method === 'POST') {
+      return handleAccount(request, env);
+    }
+    if (url.pathname === '/api/places/autocomplete' && request.method === 'POST') {
+      return handlePlacesAutocomplete(request, env);
+    }
+    if (url.pathname === '/api/places/details' && request.method === 'POST') {
+      return handlePlacesDetails(request, env);
+    }
 
     if (url.pathname.startsWith('/api/')) {
       return json({ error: 'not found' }, 404);
     }
 
-    // SPA + static assets
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
     }

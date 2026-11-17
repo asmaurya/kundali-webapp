@@ -6,6 +6,7 @@ import GroupsIcon from '@mui/icons-material/Groups';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import SubscriptionsIcon from '@mui/icons-material/Subscriptions';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import SettingsIcon from '@mui/icons-material/Settings';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import AddCommentIcon from '@mui/icons-material/AddComment';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -13,6 +14,7 @@ import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArro
 import LogoutIcon from '@mui/icons-material/Logout';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import { ASTROLOGERS, useChat } from '../chatStore';
+import { useLocale } from '../i18n/LocaleContext';
 
 const ICONS = {
   chat: ChatIcon,
@@ -21,6 +23,7 @@ const ICONS = {
   kundali: AccountBalanceIcon,
   subscription: SubscriptionsIcon,
   support: SupportAgentIcon,
+  settings: SettingsIcon,
 };
 
 const DEFAULT_USER = { name: 'Beta tester', plan: 'Beta', initials: 'B' };
@@ -37,6 +40,7 @@ function SidePanel({
   onLogout,
 }) {
   const { conversations, openConversation, startChat } = useChat();
+  const { t } = useLocale();
   const account = user || DEFAULT_USER;
 
   const isActive = (path) =>
@@ -71,12 +75,12 @@ function SidePanel({
         </Box>
 
         {isDesktop && (
-          <Tooltip title="Expand sidebar" placement="right">
+          <Tooltip title={t('expandSidebar')} placement="right">
             <button
               type="button"
               className="side-rail__toggle"
               onClick={onExpand}
-              aria-label="Expand sidebar"
+              aria-label={t('expandSidebar')}
             >
               <KeyboardDoubleArrowRightIcon fontSize="small" />
             </button>
@@ -107,12 +111,12 @@ function SidePanel({
               {account.initials}
             </Box>
           </Tooltip>
-          <Tooltip title="Log out" placement="right">
+          <Tooltip title={t('logOut')} placement="right">
             <button
               type="button"
               className="side-rail__item side-rail__logout"
               onClick={onLogout}
-              aria-label="Log out"
+              aria-label={t('logOut')}
             >
               <LogoutIcon fontSize="small" />
             </button>
@@ -129,12 +133,12 @@ function SidePanel({
           <AutoAwesomeIcon fontSize="small" />
         </Box>
         <Box sx={{ minWidth: 0 }}>
-          <Box className="side-panel__title">Astro Chat</Box>
-          <Box className="side-panel__subtitle">Vedic astrology chat</Box>
+          <Box className="side-panel__title">{t('appName')}</Box>
+          <Box className="side-panel__subtitle">{t('appTagline')}</Box>
         </Box>
         {isDesktop && (
           <IconButton
-            aria-label="Collapse sidebar"
+            aria-label={t('collapseSidebar')}
             onClick={onCollapse}
             size="small"
             sx={{ ml: 'auto', color: '#6A6580' }}
@@ -155,12 +159,12 @@ function SidePanel({
           }}
           sx={{ bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
         >
-          New chat
+          {t('newChat')}
         </Button>
       </Box>
 
       <Box className="side-panel__scroll">
-        <Box className="side-panel__section">Recent chats</Box>
+        <Box className="side-panel__section">{t('recentChats')}</Box>
         {recent.map((conversation) => {
           const astrologer = ASTROLOGERS[conversation.astrologerId];
           return (
@@ -186,7 +190,7 @@ function SidePanel({
           );
         })}
 
-        <Box className="side-panel__section">Astrologers</Box>
+        <Box className="side-panel__section">{t('astrologers')}</Box>
         {astrologerList.map((astrologer) => (
           <button
             type="button"
@@ -216,7 +220,7 @@ function SidePanel({
           </button>
         ))}
 
-        <Box className="side-panel__section">Menu</Box>
+        <Box className="side-panel__section">{t('menu')}</Box>
         {items.map((item) => {
           const Icon = ICONS[item.icon];
           return (
@@ -242,9 +246,9 @@ function SidePanel({
           <Box className="side-panel__user-name">{account.name}</Box>
           <Box className="side-panel__user-plan">{account.plan}</Box>
         </Box>
-        <Tooltip title="Log out">
+        <Tooltip title={t('logOut')}>
           <IconButton
-            aria-label="Log out"
+            aria-label={t('logOut')}
             onClick={onLogout}
             size="small"
             sx={{ ml: 'auto', color: '#4A4560' }}

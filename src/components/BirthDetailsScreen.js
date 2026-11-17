@@ -2,16 +2,16 @@ import React, { useState } from 'react';
 import { Box, Button, InputAdornment, TextField, Typography } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import ScheduleIcon from '@mui/icons-material/Schedule';
-import PlaceIcon from '@mui/icons-material/Place';
 import LockIcon from '@mui/icons-material/Lock';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import PlaceOfBirthField from './PlaceOfBirthField';
+import { useLocale } from '../i18n/LocaleContext';
 
 const fieldSx = {
   '& .MuiOutlinedInput-root': {
     bgcolor: '#FDFBFF',
     borderRadius: 2.5,
   },
-  // Keep the floating label above the outline notch, never over the value.
   '& .MuiInputLabel-root': {
     backgroundColor: '#FCF8F3',
     px: 0.5,
@@ -22,11 +22,13 @@ const fieldSx = {
 };
 
 function BirthDetailsScreen({ onSubmit, onBack }) {
+  const { t } = useLocale();
   const [details, setDetails] = useState({
     date: '',
     time: '',
     place: '',
   });
+  const [placeMeta, setPlaceMeta] = useState(null);
 
   const handleChange = (field) => (event) => {
     setDetails((current) => ({ ...current, [field]: event.target.value }));
@@ -34,30 +36,38 @@ function BirthDetailsScreen({ onSubmit, onBack }) {
 
   const canSubmit = details.date && details.time && details.place;
 
+  const submit = () => {
+    const payload = { ...details };
+    if (placeMeta && Number.isFinite(Number(placeMeta.lat)) && Number.isFinite(Number(placeMeta.lon))) {
+      payload.lat = Number(placeMeta.lat);
+      payload.lon = Number(placeMeta.lon);
+      payload.tzOffsetHours = placeMeta.tzOffsetHours;
+      payload.countryCode = placeMeta.countryCode;
+      payload.placeId = placeMeta.placeId;
+      payload.source = placeMeta.source;
+      payload.place = placeMeta.label || details.place;
+    }
+    onSubmit(payload);
+  };
+
   return (
     <Box className="stack-page">
       <Box className="hill-deco" sx={{ opacity: 0.7 }} />
       <Box sx={{ position: 'relative', zIndex: 1, width: 'min(720px, 100%)', margin: '0 auto', padding: '28px 32px 40px' }}>
         {onBack && (
-          <Button
-            startIcon={<ArrowBackIcon />}
-            onClick={onBack}
-            sx={{ color: '#1E1B2E', pl: 0, mb: 2 }}
-          >
-            Back
+          <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ color: '#1E1B2E', pl: 0, mb: 2 }}>
+            {t('back')}
           </Button>
         )}
 
         <Typography component="h2" sx={{ fontSize: 28, fontWeight: 700, color: '#1E1B2E' }}>
-          Your Birth Details
+          {t('birthTitle')}
         </Typography>
-        <Typography sx={{ mt: 1, fontSize: 17, color: '#3A3550' }}>
-          Help us create your personal astrology chart.
-        </Typography>
+        <Typography sx={{ mt: 1, fontSize: 17, color: '#3A3550' }}>{t('birthSubtitle')}</Typography>
 
         <Box sx={{ display: 'grid', gap: 2.5, mt: 4 }}>
           <TextField
-            label="Date of Birth"
+            label={t('dateOfBirth')}
             type="date"
             value={details.date}
             onChange={handleChange('date')}
@@ -76,7 +86,7 @@ function BirthDetailsScreen({ onSubmit, onBack }) {
           />
 
           <TextField
-            label="Time of Birth"
+            label={t('timeOfBirth')}
             type="time"
             value={details.time}
             onChange={handleChange('time')}
@@ -94,23 +104,13 @@ function BirthDetailsScreen({ onSubmit, onBack }) {
             sx={fieldSx}
           />
 
-          <TextField
-            label="Place of Birth"
+          <PlaceOfBirthField
+            label={t('placeOfBirth')}
+            placeholder={t('placePlaceholder')}
+            hint={t('placeHint')}
             value={details.place}
-            onChange={handleChange('place')}
-            placeholder="City, State, Country"
-            fullWidth
-            slotProps={{
-              inputLabel: { shrink: Boolean(details.place) },
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <PlaceIcon sx={{ color: '#5B3FA0' }} />
-                  </InputAdornment>
-                ),
-              },
-            }}
-            sx={fieldSx}
+            onChange={(place) => setDetails((current) => ({ ...current, place }))}
+            onResolved={setPlaceMeta}
           />
         </Box>
 
@@ -126,19 +126,17 @@ function BirthDetailsScreen({ onSubmit, onBack }) {
           }}
         >
           <LockIcon sx={{ color: '#5B3FA0', fontSize: 20 }} />
-          <Typography sx={{ fontSize: 14, color: '#3A3550' }}>
-            Your birth details stay private and are only used to compute your chart.
-          </Typography>
+          <Typography sx={{ fontSize: 14, color: '#3A3550' }}>{t('placePrivate')}</Typography>
         </Box>
 
         <Button
           fullWidth
           variant="contained"
           disabled={!canSubmit}
-          onClick={() => onSubmit(details)}
+          onClick={submit}
           sx={{ mt: 3, py: 1.6, fontSize: 19, bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
         >
-          Create My Chart
+          {t('createChart')}
         </Button>
       </Box>
     </Box>
