@@ -458,6 +458,62 @@ export function generateChart(birth) {
   };
 }
 
+/**
+ * Compact kundali JSON for LLM context (preferred over XML — matches our canonical chart).
+ * Keeps birth stamp + placements; drops internal provenance / place ids.
+ */
+export function chartJsonForPrompt(chart) {
+  if (!chart) return null;
+  const birth = chart.birth || {};
+  return {
+    ayanamsa: chart.ayanamsa || 'lahiri',
+    house_system: chart.house_system || 'whole_sign',
+    birth: {
+      date: birth.date || null,
+      time: birth.time || null,
+      place: birth.place || null,
+      lat: birth.lat ?? null,
+      lon: birth.lon ?? null,
+      tz: birth.tz || null,
+      tzOffsetHours: birth.tzOffsetHours ?? null,
+    },
+    lagna: chart.lagna
+      ? {
+          rashi: chart.lagna.rashiName || chart.lagna.rashi,
+          degree: chart.lagna.degree,
+          nakshatra: chart.lagna.nakshatraName || chart.lagna.nakshatra,
+          pada: chart.lagna.pada,
+        }
+      : null,
+    summary: chart.summary || null,
+    grahas: (chart.grahas || []).map((g) => ({
+      name: g.name,
+      rashi: g.rashiName || g.rashi,
+      degree: g.degree,
+      house: g.house,
+      nakshatra: g.nakshatraName || g.nakshatra,
+      pada: g.pada,
+      retrograde: Boolean(g.retrograde),
+    })),
+    houses: (chart.houses || []).map((h) => ({
+      house: h.house,
+      sign: h.sign,
+      planets: h.planets || [],
+    })),
+    dasha: chart.dasha
+      ? {
+          current: chart.dasha.current
+            ? {
+                lord: chart.dasha.current.lordName || chart.dasha.current.lord,
+                end: chart.dasha.current.end,
+              }
+            : null,
+        }
+      : null,
+  };
+}
+
+/** Human-readable lines (legacy / fallbacks). Prefer chartJsonForPrompt for LLM. */
 export function chartContextForPrompt(chart) {
   if (!chart) return 'No chart available.';
   const birth = chart.birth || {};
@@ -480,4 +536,27 @@ export function chartContextForPrompt(chart) {
     ),
   ].filter(Boolean);
   return lines.join('\n');
+}
+
+/**
+ * Build LLM chart context: querent kundali is ALWAYS included.
+ * Optional family charts are appended when mentioned in chat.
+ */
+export function buildLlmChartContext({ querentChart, familyCharts = [] } = {}) {
+  const blocks = [];
+  const querent = chartJsonForPrompt(querentChart);
+  if (querent) {
+    blocks.push(`Querent kundali (JSON):\n${JSON.stringify(querent)}`);
+  } else {
+    blocks.push('Querent kundali (JSON): null');
+  }
+
+  (familyCharts || []).forEach((entry) => {
+    const json = chartJsonForPrompt(entry.chart);
+    if (!json) return;
+    const label = entry.label || entry.relation || 'family';
+    blocks.push(`Family kundali — ${label} (JSON):\n${JSON.stringify(json)}`);
+  });
+
+  return blocks.join('\n\n');
 }

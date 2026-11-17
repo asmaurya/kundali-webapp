@@ -1,4 +1,4 @@
-import { chartContextForPrompt } from './lib/chartEngine';
+import { buildLlmChartContext } from './lib/chartEngine';
 import { BETA_INVITE_CODE, buildAccountSnapshot } from './betaSession';
 import {
   askWithPrivacy,
@@ -47,16 +47,23 @@ export function createChart(birthDetails) {
 export async function askOracle({
   question,
   chart,
+  chartContext,
   history = [],
   locale = 'en',
-  extraContext = '',
+  familyCharts = [],
   people = {},
   modelTier = 'flash',
 }) {
-  const chartContext = `${chartContextForPrompt(chart)}${extraContext || ''}`;
+  // Querent kundali is always in context; family charts are additive when provided.
+  const resolvedContext =
+    chartContext ||
+    buildLlmChartContext({
+      querentChart: chart,
+      familyCharts,
+    });
   const result = await askWithPrivacy({
     question,
-    chartContext,
+    chartContext: resolvedContext,
     messages: history,
     locale,
     people,

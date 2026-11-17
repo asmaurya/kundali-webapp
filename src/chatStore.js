@@ -9,7 +9,7 @@ import {
 } from './betaSession';
 import { askOracle } from './api';
 import { scriptedReplyFor } from './scriptedReplies';
-import { chartContextForPrompt } from './lib/chartEngine';
+import { buildLlmChartContext } from './lib/chartEngine';
 import { getSelfProfile, listProfiles } from './lib/profiles';
 import {
   markAstrologerUsed,
@@ -26,18 +26,22 @@ function peopleForAnonymize() {
   return { selfName: self?.name || '', family };
 }
 
-function familyContextFromQuestion(question) {
+/** Family charts mentioned in the question (querent chart is always added separately). */
+function familyChartsFromQuestion(question) {
   const profiles = listProfiles().filter((p) => !p.isSelf && p.chart);
-  if (!profiles.length) return '';
-  const mentioned = profiles.filter((p) => {
-    const q = String(question || '').toLowerCase();
-    return q.includes(String(p.name).toLowerCase()) || q.includes(`@${String(p.name).toLowerCase()}`);
-  });
-  if (!mentioned.length) return '';
-  // Relationship label in the outbound context; names stripped again by anonymiser.
-  return mentioned
-    .map((p) => `\nFamily chart — ${p.name} (${p.relation}):\n${chartContextForPrompt(p.chart)}`)
-    .join('\n');
+  if (!profiles.length) return [];
+  const q = String(question || '').toLowerCase();
+  return profiles
+    .filter(
+      (p) =>
+        q.includes(String(p.name).toLowerCase()) || q.includes(`@${String(p.name).toLowerCase()}`)
+    )
+    .map((p) => ({
+      // Name kept briefly for anonymiser → relation label; chart JSON has no personal name field.
+      label: `${p.name} (${p.relation})`,
+      relation: p.relation,
+      chart: p.chart,
+    }));
 }
 
 export const ASTROLOGERS = {
@@ -318,13 +322,16 @@ export function ChatProvider({ children }) {
         try {
           const locale = getSettings()?.locale === 'hi' ? 'hi' : 'en';
           const chart = getChart();
-          const extra = familyContextFromQuestion(trimmed);
+          const chartContext = buildLlmChartContext({
+            querentChart: chart,
+            familyCharts: familyChartsFromQuestion(trimmed),
+          });
           const result = await askOracle({
             question: trimmed,
             chart,
+            chartContext,
             history: active.messages,
             locale,
-            extraContext: extra,
             people: peopleForAnonymize(),
           });
           replyText = result.text;

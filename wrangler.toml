@@ -3,7 +3,8 @@
 #   NVIDIA_API_KEY or OPENAI_API_KEY — live LLM answers (Worker only; never in CRA .env)
 #   OPENAI_BASE_URL — default https://api.openai.com/v1
 #                      NVIDIA NIM: https://integrate.api.nvidia.com/v1
-#   OPENAI_MODEL — OpenAI default gpt-4o-mini; for NIM set e.g. meta/llama-3.1-70b-instruct
+#   OPENAI_MODEL — NIM / OpenAI model id
+#   MASTER_PROMPT — optional text appended to every LLM system prompt (Worker-only)
 #   GOOGLE_PLACES_API_KEY — Google Places + Time Zone (Nominatim fallback if unset)
 #   BETA_INVITE_CODE — override invite code server-side
 # Optional KV binding SETTINGS — durable cross-device account sync (Cache API used otherwise)
@@ -14,8 +15,10 @@ compatibility_date = "2025-11-01"
 # Non-secret LLM routing (NVIDIA NIM). API key stays a Worker secret.
 [vars]
 OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
-OPENAI_MODEL = "mistralai/mistral-large-4-1t-a52b"
+OPENAI_MODEL = "nvidia/nemotron-3.5-bolt-e4b"
 WORKER_BUILD = "provider-abstractions-nvidia"
+# Override in dashboard or via `wrangler secret put MASTER_PROMPT` for a longer prompt.
+MASTER_PROMPT = "Ground every answer in the querent kundali JSON provided in context. When a family kundali JSON is also present, compare both charts and state which placements support the reading. Prefer precise Jyotish references (lagna, houses, grahas, dasha) over generic advice."
 
 [assets]
 directory = "./build"

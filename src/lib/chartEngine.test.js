@@ -1,5 +1,7 @@
 import {
+  buildLlmChartContext,
   chartContextForPrompt,
+  chartJsonForPrompt,
   generateChart,
   lahiriAyanamsa,
   parseBirthDateTime,
@@ -95,4 +97,37 @@ test('chartContextForPrompt includes birth stamp for Jyotish', () => {
   expect(ctx).toMatch(/12:45/);
   expect(ctx).toMatch(/Jaipur/);
   expect(ctx).toMatch(/Lagna:/);
+});
+
+test('buildLlmChartContext always includes querent JSON and optional family', () => {
+  const querent = generateChart({
+    date: '1988-08-14',
+    time: '12:45',
+    place: 'Jaipur, Rajasthan, India',
+    lat: 26.9124,
+    lon: 75.7873,
+    tzOffsetHours: 5.5,
+  });
+  const father = generateChart({
+    date: '1962-03-12',
+    time: '06:15',
+    place: 'Jaipur, Rajasthan, India',
+    lat: 26.9124,
+    lon: 75.7873,
+    tzOffsetHours: 5.5,
+  });
+  const json = chartJsonForPrompt(querent);
+  expect(json.birth.date).toBe('1988-08-14');
+  expect(json.grahas.length).toBe(9);
+
+  const alone = buildLlmChartContext({ querentChart: querent });
+  expect(alone).toMatch(/Querent kundali \(JSON\)/);
+  expect(alone).not.toMatch(/Family kundali/);
+
+  const withFamily = buildLlmChartContext({
+    querentChart: querent,
+    familyCharts: [{ label: 'Father', chart: father }],
+  });
+  expect(withFamily).toMatch(/Querent kundali \(JSON\)/);
+  expect(withFamily).toMatch(/Family kundali — Father \(JSON\)/);
 });

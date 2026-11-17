@@ -6,7 +6,15 @@
 
 const TONE = `Be accurate and neutral. State only what the chart supports. Do not add reassurance or positivity the chart does not support. Do not give exact dates, amounts, scores or exact outcomes; give periods and tendencies. Do not discuss death, lifespan, pregnancy, medical or psychological diagnoses. Do not promise outcomes. Religion-neutral: no deities or temple prescriptions; practical habits are fine. Keep answers under 120 words. Output ONLY the final user-facing answer — no planning, no rule checklists, no phrases like "The user wants" or "Constraints to follow".`;
 
+/** Built-in default; dashboard/wrangler MASTER_PROMPT is appended on every LLM call. */
+const DEFAULT_MASTER_PROMPT = `Always use the querent kundali JSON in context. Chat history and the rolling summary are for coherence only — natal facts come from the JSON. If a family kundali JSON is present, include both charts in the reading.`;
+
 const DEFAULT_INVITE = 'KUNDALI-BETA';
+
+function masterPrompt(env) {
+  const fromEnv = String(env.MASTER_PROMPT || '').trim();
+  return fromEnv || DEFAULT_MASTER_PROMPT;
+}
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -130,7 +138,15 @@ async function openAiReply(env, question, chartContext, history, locale, summary
   const messages = [
     {
       role: 'system',
-      content: `${TONE}\n${langLine}\n\nNatal chart context:\n${chartContext}${summaryBlock}`,
+      content: [
+        TONE,
+        langLine,
+        `Master prompt:\n${masterPrompt(env)}`,
+        `Kundali + context (querent JSON is always present; family JSON only when relevant):\n${chartContext || 'No chart provided.'}`,
+        summaryBlock.trim(),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
     },
     ...normalizeChatHistory(history),
     {
@@ -139,7 +155,7 @@ async function openAiReply(env, question, chartContext, history, locale, summary
     },
   ];
 
-  // muse-glimmer is a reasoning model: low temp + tiny max_tokens often yields empty
+  // muse-glimmer / similar reasoning models: low temp + tiny max_tokens often yields empty
   // content because reasoning shares the token budget (NVIDIA docs).
   const isReasoningNim = cfg.provider === 'nvidia' && /glimmer|muse|reason/i.test(cfg.model);
   const body = {
@@ -577,10 +593,13 @@ export default {
     }
 
     if (url.pathname === '/api/health') {
+      const cfg = llmConfig(env);
       return json({
         ok: true,
         llm: Boolean(env.OPENAI_API_KEY || env.NVIDIA_API_KEY),
-        llmProvider: llmConfig(env)?.provider || null,
+        llmProvider: cfg?.provider || null,
+        llmModel: cfg?.model || null,
+        masterPrompt: Boolean(String(env.MASTER_PROMPT || DEFAULT_MASTER_PROMPT).trim()),
         places: Boolean(env.GOOGLE_PLACES_API_KEY),
         settingsStore: Boolean(env.SETTINGS),
         service: 'kundali-webapp',
