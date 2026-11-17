@@ -59,18 +59,87 @@ const DEFAULT_LLM_LAB = {
   maxTokens: 280,
   captureThinking: true,
   showThinking: false,
+  /** @type {Array<{id:string,label:string,baseUrl:string,api:string,secretName:string,defaultModel?:string}>} */
+  customProviders: [],
+  /** Booleans only — never store key material. Tracks non-NVIDIA secrets written from Lab. */
+  keysConfigured: {},
 };
 
-function normalizeProviderId(value) {
+function slugifyProviderId(label) {
+  const slug = String(label || 'custom')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24);
+  return `custom_${slug || 'provider'}`;
+}
+
+function customSecretName(providerId) {
+  const safe = String(providerId || 'custom')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  return `LLM_${safe || 'CUSTOM'}_KEY`;
+}
+
+function normalizeBuiltInProviderId(value) {
   const p = String(value || '').toLowerCase().trim();
   if (p === 'anthropic' || p === 'claude') return 'claude';
   if (p === 'openai') return 'openai';
   if (p === 'nvidia' || p === 'nim') return 'nvidia';
+  return null;
+}
+
+function listCustomProviders(lab) {
+  return Array.isArray(lab?.customProviders) ? lab.customProviders.filter((p) => p && p.id && p.baseUrl) : [];
+}
+
+function resolveProviderMeta(providerId, lab = null) {
+  const builtIn = normalizeBuiltInProviderId(providerId);
+  if (builtIn) {
+    return {
+      ...LLM_PROVIDERS[builtIn],
+      custom: false,
+      keyLocked: builtIn === 'nvidia',
+    };
+  }
+  const customs = listCustomProviders(lab);
+  const found = customs.find((p) => p.id === providerId);
+  if (found) {
+    return {
+      id: found.id,
+      label: found.label || found.id,
+      baseUrl: String(found.baseUrl || '').replace(/\/$/, ''),
+      secretName: found.secretName || customSecretName(found.id),
+      api: found.api === 'anthropic' ? 'anthropic' : 'openai',
+      defaultModel: found.defaultModel || '',
+      custom: true,
+      keyLocked: false,
+    };
+  }
+  // Fall back to permanent NVIDIA provider.
+  return { ...LLM_PROVIDERS.nvidia, custom: false, keyLocked: true };
+}
+
+function normalizeProviderId(value, lab = null) {
+  const builtIn = normalizeBuiltInProviderId(value);
+  if (builtIn) return builtIn;
+  if (value && listCustomProviders(lab).some((p) => p.id === value)) return value;
   return 'nvidia';
 }
 
-function providerMeta(providerId) {
-  return LLM_PROVIDERS[normalizeProviderId(providerId)] || LLM_PROVIDERS.nvidia;
+function providerMeta(providerId, lab = null) {
+  return resolveProviderMeta(providerId, lab);
+}
+
+function keyIsConfigured(env, lab, meta) {
+  if (!meta) return false;
+  if (meta.id === 'nvidia') {
+    return secretPresent(env, 'NVIDIA_API_KEY') || secretPresent(env, 'OPENAI_API_KEY');
+  }
+  if (secretPresent(env, meta.secretName)) return true;
+  return Boolean(lab?.keysConfigured?.[meta.id]);
 }
 
 function llmLabCacheKey() {
@@ -96,10 +165,24 @@ async function readLlmLab(env) {
 
 async function writeLlmLab(env, lab) {
   // Never persist API keys in lab storage — keys live only as Cloudflare secrets.
-  const { apiKey: _drop, baseUrl: _dropBase, ...safe } = { ...DEFAULT_LLM_LAB, ...lab };
-  const payload = { ...safe, updatedAt: new Date().toISOString() };
-  delete payload.apiKey;
-  delete payload.baseUrl;
+  const merged = { ...DEFAULT_LLM_LAB, ...lab };
+  delete merged.apiKey;
+  const payload = {
+    ...merged,
+    customProviders: listCustomProviders(merged).map((p) => ({
+      id: p.id,
+      label: String(p.label || p.id).slice(0, 80),
+      baseUrl: String(p.baseUrl || '').replace(/\/$/, '').slice(0, 300),
+      api: p.api === 'anthropic' ? 'anthropic' : 'openai',
+      secretName: p.secretName || customSecretName(p.id),
+      defaultModel: String(p.defaultModel || '').slice(0, 200),
+    })),
+    keysConfigured:
+      merged.keysConfigured && typeof merged.keysConfigured === 'object' ? { ...merged.keysConfigured } : {},
+    updatedAt: new Date().toISOString(),
+  };
+  // NVIDIA key is permanent Cloudflare secret — never track Lab overrides for it.
+  delete payload.keysConfigured.nvidia;
   if (env.SETTINGS) {
     await env.SETTINGS.put(LLM_LAB_KEY, JSON.stringify(payload));
   }
@@ -215,23 +298,53 @@ function authorizeAdmin(body, env) {
 }
 
 function publicLlmLabView(lab, env) {
-  const resolvedProvider = normalizeProviderId(
-    lab.provider ||
-      (/nvidia\.com/i.test(String(env.OPENAI_BASE_URL || '')) ? 'nvidia' : '') ||
-      (env.ANTHROPIC_API_KEY && !env.NVIDIA_API_KEY && !env.OPENAI_API_KEY ? 'claude' : '') ||
-      (env.NVIDIA_API_KEY ? 'nvidia' : 'openai')
-  );
-  const resolvedMeta = providerMeta(resolvedProvider);
-  const keySet = secretPresent(env, resolvedMeta.secretName);
+  const resolvedProvider = normalizeProviderId(lab.provider || inferProviderFromEnv(env), lab);
+  const resolvedMeta = resolveProviderMeta(resolvedProvider, lab);
+  const keySet = keyIsConfigured(env, lab, resolvedMeta);
+  const builtInProviders = Object.values(LLM_PROVIDERS).map((p) => ({
+    id: p.id,
+    label: p.label,
+    baseUrl: p.baseUrl,
+    secretName: p.secretName,
+    defaultModel: p.defaultModel,
+    api: p.api,
+    custom: false,
+    keyLocked: p.id === 'nvidia',
+    apiKeySet:
+      p.id === 'nvidia'
+        ? secretPresent(env, 'NVIDIA_API_KEY') || secretPresent(env, 'OPENAI_API_KEY')
+        : keyIsConfigured(env, lab, { id: p.id, secretName: p.secretName }),
+  }));
+  const customProviders = listCustomProviders(lab).map((p) => {
+    const meta = resolveProviderMeta(p.id, lab);
+    return {
+      id: meta.id,
+      label: meta.label,
+      baseUrl: meta.baseUrl,
+      secretName: meta.secretName,
+      defaultModel: meta.defaultModel || '',
+      api: meta.api,
+      custom: true,
+      keyLocked: false,
+      apiKeySet: keyIsConfigured(env, lab, meta),
+    };
+  });
   return {
     masterPrompt: lab.masterPrompt || '',
     provider: resolvedProvider,
     providerLabel: resolvedMeta.label,
+    providerCustom: Boolean(resolvedMeta.custom),
+    keyLocked: Boolean(resolvedMeta.keyLocked),
     baseUrl: resolvedMeta.baseUrl,
     secretName: resolvedMeta.secretName,
-    model: lab.model || env.OPENAI_MODEL || resolvedMeta.defaultModel,
+    model: lab.model || env.OPENAI_MODEL || resolvedMeta.defaultModel || '',
     apiKeySet: keySet,
-    apiKeyMasked: keySet ? `•••• Cloudflare secret (${resolvedMeta.secretName})` : '',
+    apiKeyMasked: keySet
+      ? resolvedMeta.id === 'nvidia'
+        ? '•••• permanent Cloudflare secret (NVIDIA_API_KEY)'
+        : `•••• Cloudflare secret (${resolvedMeta.secretName})`
+      : '',
+    apiKeyRequired: resolvedMeta.id !== 'nvidia' && !keySet,
     cloudflareSecretsWritable: Boolean(env.CF_ACCOUNT_ID && env.CF_API_TOKEN),
     temperature: Number(lab.temperature ?? DEFAULT_LLM_LAB.temperature),
     topP: Number(lab.topP ?? DEFAULT_LLM_LAB.topP),
@@ -241,18 +354,12 @@ function publicLlmLabView(lab, env) {
     captureThinking: lab.captureThinking !== false,
     showThinking: Boolean(lab.showThinking),
     updatedAt: lab.updatedAt || null,
-    providers: Object.values(LLM_PROVIDERS).map((p) => ({
-      id: p.id,
-      label: p.label,
-      baseUrl: p.baseUrl,
-      secretName: p.secretName,
-      defaultModel: p.defaultModel,
-      apiKeySet: secretPresent(env, p.secretName),
-    })),
+    providers: [...builtInProviders, ...customProviders],
+    customProviders,
     defaults: {
       masterPrompt: String(env.MASTER_PROMPT || DEFAULT_MASTER_PROMPT),
-      model: env.OPENAI_MODEL || resolvedMeta.defaultModel,
-      provider: resolvedProvider,
+      model: env.OPENAI_MODEL || LLM_PROVIDERS.nvidia.defaultModel,
+      provider: 'nvidia',
     },
   };
 }
@@ -450,25 +557,24 @@ function inferProviderFromEnv(env) {
   return 'nvidia';
 }
 
-/** Resolve provider → fixed base URL + Cloudflare secret key + lab params. */
+/** Resolve provider → base URL + Cloudflare secret key + lab params. */
 function llmConfig(env, lab = null) {
-  const provider = normalizeProviderId(lab?.provider || inferProviderFromEnv(env));
-  const meta = providerMeta(provider);
-  const key = String(env[meta.secretName] || '').trim();
-  // Fallback for older NVIDIA setups that only had OPENAI_API_KEY against NIM URL.
-  const fallbackKey =
-    !key && provider === 'nvidia'
-      ? String(env.OPENAI_API_KEY || '').trim()
-      : !key && provider === 'openai'
-        ? String(env.NVIDIA_API_KEY || '').trim()
-        : '';
-  const resolvedKey = key || fallbackKey;
+  const provider = normalizeProviderId(lab?.provider || inferProviderFromEnv(env), lab);
+  const meta = resolveProviderMeta(provider, lab);
+  let resolvedKey = String(env[meta.secretName] || '').trim();
+  // Permanent NVIDIA fallback for older NIM setups that only set OPENAI_API_KEY.
+  if (!resolvedKey && meta.id === 'nvidia') {
+    resolvedKey = String(env.OPENAI_API_KEY || '').trim();
+  }
   if (!resolvedKey) return null;
 
   const model =
     String(lab?.model || '').trim() ||
-    String(env.OPENAI_MODEL || '').trim() ||
-    meta.defaultModel;
+    (meta.id === 'nvidia' || meta.id === 'openai' || meta.id === 'claude'
+      ? String(env.OPENAI_MODEL || '').trim()
+      : '') ||
+    meta.defaultModel ||
+    '';
 
   return {
     key: resolvedKey,
@@ -1185,11 +1291,13 @@ async function handleLlmLab(request, env) {
 
   if (body.action === 'put') {
     const existing = await readLlmLab(env);
-    const next = { ...existing };
+    const next = {
+      ...existing,
+      customProviders: listCustomProviders(existing),
+      keysConfigured: { ...(existing.keysConfigured || {}) },
+    };
     delete next.apiKey;
-    delete next.baseUrl;
     if (typeof body.masterPrompt === 'string') next.masterPrompt = body.masterPrompt.slice(0, 12000);
-    if (typeof body.provider === 'string') next.provider = normalizeProviderId(body.provider);
     if (typeof body.model === 'string') next.model = body.model.trim().slice(0, 200);
     if (body.temperature != null) next.temperature = clampNumber(body.temperature, 0, 2, existing.temperature);
     if (body.topP != null) next.topP = clampNumber(body.topP, 0, 1, existing.topP);
@@ -1202,12 +1310,64 @@ async function handleLlmLab(request, env) {
     if (body.maxTokens != null) next.maxTokens = clampNumber(body.maxTokens, 64, 8192, existing.maxTokens);
     if (typeof body.captureThinking === 'boolean') next.captureThinking = body.captureThinking;
     if (typeof body.showThinking === 'boolean') next.showThinking = body.showThinking;
+
+    // Upsert / update a custom provider definition (no key material stored here).
+    if (body.customProvider && typeof body.customProvider === 'object') {
+      const cp = body.customProvider;
+      const label = String(cp.label || cp.name || '').trim().slice(0, 80);
+      const baseUrl = String(cp.baseUrl || '').trim().replace(/\/$/, '').slice(0, 300);
+      if (!label || !baseUrl) {
+        return json({ error: 'custom_provider_invalid', detail: 'Custom provider needs a name and base URL.' }, 400);
+      }
+      if (!/^https?:\/\//i.test(baseUrl)) {
+        return json({ error: 'custom_provider_invalid', detail: 'Base URL must start with http:// or https://.' }, 400);
+      }
+      let id = String(cp.id || '').trim();
+      if (!id || normalizeBuiltInProviderId(id)) id = slugifyProviderId(label);
+      // Ensure unique id.
+      const taken = next.customProviders.some((p) => p.id === id && p.id !== cp.id);
+      if (taken) id = `${id}_${Date.now().toString(36).slice(-4)}`;
+      const entry = {
+        id,
+        label,
+        baseUrl,
+        api: cp.api === 'anthropic' ? 'anthropic' : 'openai',
+        secretName: customSecretName(id),
+        defaultModel: String(cp.defaultModel || cp.model || '').slice(0, 200),
+      };
+      const idx = next.customProviders.findIndex((p) => p.id === id);
+      if (idx >= 0) next.customProviders[idx] = { ...next.customProviders[idx], ...entry };
+      else next.customProviders.push(entry);
+      next.provider = id;
+      if (entry.defaultModel) next.model = entry.defaultModel;
+    }
+
+    if (typeof body.provider === 'string' && body.provider !== '__add_custom__') {
+      next.provider = normalizeProviderId(body.provider, next);
+    }
+
+    // Custom providers may update base URL when selected.
+    const selectedMeta = resolveProviderMeta(next.provider, next);
+    if (selectedMeta.custom && typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
+      const baseUrl = body.baseUrl.trim().replace(/\/$/, '').slice(0, 300);
+      if (!/^https?:\/\//i.test(baseUrl)) {
+        return json({ error: 'custom_provider_invalid', detail: 'Base URL must start with http:// or https://.' }, 400);
+      }
+      next.customProviders = next.customProviders.map((p) =>
+        p.id === selectedMeta.id ? { ...p, baseUrl } : p
+      );
+    }
+
     next.updatedBy = email;
 
     let secretResult = null;
     const incomingKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
-    if (incomingKey && !incomingKey.includes('•')) {
-      const meta = providerMeta(next.provider);
+    const meta = resolveProviderMeta(next.provider, next);
+
+    // NVIDIA key is permanent — never overwrite from Lab.
+    if (meta.id === 'nvidia') {
+      // ignore incomingKey
+    } else if (incomingKey && !incomingKey.includes('•')) {
       secretResult = await putWorkerSecret(env, meta.secretName, incomingKey.slice(0, 400));
       if (!secretResult.ok) {
         return json(
@@ -1219,6 +1379,16 @@ async function handleLlmLab(request, env) {
           502
         );
       }
+      next.keysConfigured = { ...next.keysConfigured, [meta.id]: true };
+    } else if (!keyIsConfigured(env, next, meta)) {
+      return json(
+        {
+          error: 'api_key_required',
+          detail: `API key required for ${meta.label}. Paste a key once — it is saved as Cloudflare secret ${meta.secretName} and reused until you replace it.`,
+          lab: publicLlmLabView({ ...existing, ...next, provider: next.provider }, env),
+        },
+        400
+      );
     }
 
     const saved = await writeLlmLab(env, next);
@@ -1228,17 +1398,47 @@ async function handleLlmLab(request, env) {
       secretSaved: Boolean(secretResult?.ok),
       secretName: secretResult?.secretName || null,
       note: secretResult?.ok
-        ? `API key stored as Cloudflare secret ${secretResult.secretName} and removed from lab storage.`
-        : undefined,
+        ? `API key stored as Cloudflare secret ${secretResult.secretName}. It stays until you paste a new key for this provider.`
+        : meta.id === 'nvidia'
+          ? 'Using permanent NVIDIA Cloudflare secret. Other settings saved.'
+          : undefined,
     });
   }
 
-  if (body.action === 'reset') {
-    const saved = await writeLlmLab(env, { ...DEFAULT_LLM_LAB });
+  if (body.action === 'deleteCustom') {
+    const existing = await readLlmLab(env);
+    const id = String(body.providerId || body.id || '').trim();
+    if (!id || normalizeBuiltInProviderId(id)) {
+      return json({ error: 'invalid_custom_provider' }, 400);
+    }
+    const next = {
+      ...existing,
+      customProviders: listCustomProviders(existing).filter((p) => p.id !== id),
+      keysConfigured: { ...(existing.keysConfigured || {}) },
+    };
+    delete next.keysConfigured[id];
+    if (next.provider === id) next.provider = 'nvidia';
+    const saved = await writeLlmLab(env, next);
     return json({ ok: true, lab: publicLlmLabView(saved, env) });
   }
 
-  return json({ error: 'action must be get, put, reset, trace, or probe' }, 400);
+  if (body.action === 'reset') {
+    const existing = await readLlmLab(env);
+    // Keep custom providers + key flags; never touch Cloudflare secrets (incl. NVIDIA).
+    const saved = await writeLlmLab(env, {
+      ...DEFAULT_LLM_LAB,
+      customProviders: listCustomProviders(existing),
+      keysConfigured: { ...(existing.keysConfigured || {}) },
+      provider: 'nvidia',
+    });
+    return json({
+      ok: true,
+      lab: publicLlmLabView(saved, env),
+      note: 'Lab defaults reset. Provider keys and custom providers were kept; NVIDIA secret untouched.',
+    });
+  }
+
+  return json({ error: 'action must be get, put, reset, trace, probe, or deleteCustom' }, 400);
 }
 
 export default {

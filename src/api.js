@@ -290,6 +290,29 @@ export async function resetLlmLab(session, adminToken = '') {
     if (!response.ok) {
       return { ok: false, error: data.detail || data.error || 'reset_failed' };
     }
+    return { ok: true, lab: data.lab, note: data.note || null };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+}
+
+/** Remove a custom provider from the lab list (Cloudflare secret left in place). */
+export async function deleteCustomLlmProvider(session, adminToken = '', providerId) {
+  try {
+    const response = await fetch('/api/admin/llm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        adminToken,
+        action: 'deleteCustom',
+        providerId,
+      }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      return { ok: false, error: data.detail || data.error || 'delete_failed' };
+    }
     return { ok: true, lab: data.lab };
   } catch (error) {
     return { ok: false, error: String(error.message || error) };

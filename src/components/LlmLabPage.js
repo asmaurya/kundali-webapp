@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -14,7 +14,9 @@ import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { fetchLlmLab, probeLlmLab, resetLlmLab, saveLlmLab } from '../api';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import { deleteCustomLlmProvider, fetchLlmLab, probeLlmLab, resetLlmLab, saveLlmLab } from '../api';
 import { getSession } from '../betaSession';
 
 const FALLBACK_PROVIDERS = [
@@ -24,6 +26,9 @@ const FALLBACK_PROVIDERS = [
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     secretName: 'NVIDIA_API_KEY',
     defaultModel: 'nvidia/nemotron-3.5-bolt-e4b',
+    keyLocked: true,
+    custom: false,
+    apiKeySet: true,
   },
   {
     id: 'openai',
@@ -31,6 +36,8 @@ const FALLBACK_PROVIDERS = [
     baseUrl: 'https://api.openai.com/v1',
     secretName: 'OPENAI_API_KEY',
     defaultModel: 'gpt-4o-mini',
+    keyLocked: false,
+    custom: false,
   },
   {
     id: 'claude',
@@ -38,13 +45,18 @@ const FALLBACK_PROVIDERS = [
     baseUrl: 'https://api.anthropic.com/v1',
     secretName: 'ANTHROPIC_API_KEY',
     defaultModel: 'claude-sonnet-4-20250514',
+    keyLocked: false,
+    custom: false,
   },
 ];
+
+const ADD_CUSTOM = '__add_custom__';
 
 const emptyForm = {
   masterPrompt: '',
   provider: 'nvidia',
   model: '',
+  baseUrl: '',
   apiKey: '',
   temperature: 0.4,
   topP: 1,
@@ -128,11 +140,22 @@ function LlmLabPage({ onBack }) {
   const [meta, setMeta] = useState({
     apiKeyMasked: '',
     apiKeySet: false,
+    apiKeyRequired: false,
+    keyLocked: true,
+    providerCustom: false,
     defaults: null,
     providers: FALLBACK_PROVIDERS,
     baseUrl: '',
-    secretName: '',
+    secretName: 'NVIDIA_API_KEY',
     cloudflareSecretsWritable: false,
+  });
+  const [addingCustom, setAddingCustom] = useState(false);
+  const [customDraft, setCustomDraft] = useState({
+    label: '',
+    baseUrl: '',
+    api: 'openai',
+    defaultModel: '',
+    apiKey: '',
   });
   const [trace, setTrace] = useState(null);
   const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem('kundali.adminToken') || '');
@@ -145,15 +168,22 @@ function LlmLabPage({ onBack }) {
 
   const session = getSession();
   const providers = meta.providers?.length ? meta.providers : FALLBACK_PROVIDERS;
-  const providerMeta = providers.find((p) => p.id === form.provider) || providers[0];
+  const selected = useMemo(
+    () => providers.find((p) => p.id === form.provider) || providers[0],
+    [providers, form.provider]
+  );
+  const isNvidia = selected?.id === 'nvidia' || selected?.keyLocked;
+  const isCustom = Boolean(selected?.custom || meta.providerCustom);
 
   const patch = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const applyLab = (lab, nextTrace) => {
+    setAddingCustom(false);
     setForm({
       masterPrompt: lab.masterPrompt || '',
       provider: lab.provider || 'nvidia',
       model: lab.model || '',
+      baseUrl: lab.providerCustom ? lab.baseUrl || '' : '',
       apiKey: '',
       temperature: Number(lab.temperature ?? 0.4),
       topP: Number(lab.topP ?? 1),
@@ -166,6 +196,9 @@ function LlmLabPage({ onBack }) {
     setMeta({
       apiKeyMasked: lab.apiKeyMasked || '',
       apiKeySet: Boolean(lab.apiKeySet),
+      apiKeyRequired: Boolean(lab.apiKeyRequired),
+      keyLocked: Boolean(lab.keyLocked),
+      providerCustom: Boolean(lab.providerCustom),
       defaults: lab.defaults || null,
       providers: lab.providers?.length ? lab.providers : FALLBACK_PROVIDERS,
       baseUrl: lab.baseUrl || '',
@@ -199,11 +232,84 @@ function LlmLabPage({ onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const onProviderChange = (value) => {
+    if (value === ADD_CUSTOM) {
+      setAddingCustom(true);
+      setForm((prev) => ({ ...prev, apiKey: '' }));
+      return;
+    }
+    setAddingCustom(false);
+    const next = providers.find((p) => p.id === value) || providers[0];
+    setForm((prev) => ({
+      ...prev,
+      provider: next.id,
+      model: next.defaultModel || prev.model,
+      baseUrl: next.custom ? next.baseUrl || '' : '',
+      apiKey: '',
+    }));
+    setMeta((prev) => ({
+      ...prev,
+      apiKeySet: Boolean(next.apiKeySet),
+      apiKeyRequired: next.id !== 'nvidia' && !next.apiKeySet,
+      keyLocked: Boolean(next.keyLocked),
+      providerCustom: Boolean(next.custom),
+      baseUrl: next.baseUrl || '',
+      secretName: next.secretName || '',
+      apiKeyMasked: next.apiKeySet
+        ? next.id === 'nvidia'
+          ? '•••• permanent Cloudflare secret (NVIDIA_API_KEY)'
+          : `•••• Cloudflare secret (${next.secretName})`
+        : '',
+    }));
+  };
+
   const onSave = async () => {
     setSaving(true);
     setError('');
     sessionStorage.setItem('kundali.adminToken', adminToken || '');
-    const result = await saveLlmLab(session, adminToken, {
+
+    if (addingCustom) {
+      if (!customDraft.label.trim() || !customDraft.baseUrl.trim() || !customDraft.apiKey.trim()) {
+        setSaving(false);
+        setError('Custom provider needs a name, base URL, and API key.');
+        return;
+      }
+      const result = await saveLlmLab(session, adminToken, {
+        masterPrompt: form.masterPrompt,
+        model: customDraft.defaultModel || form.model,
+        temperature: form.temperature,
+        topP: form.topP,
+        frequencyPenalty: form.frequencyPenalty,
+        presencePenalty: form.presencePenalty,
+        maxTokens: form.maxTokens,
+        captureThinking: form.captureThinking,
+        showThinking: form.showThinking,
+        apiKey: customDraft.apiKey.trim(),
+        customProvider: {
+          label: customDraft.label.trim(),
+          baseUrl: customDraft.baseUrl.trim(),
+          api: customDraft.api,
+          defaultModel: customDraft.defaultModel.trim(),
+        },
+      });
+      setSaving(false);
+      if (!result.ok) {
+        setError(result.error || 'Save failed.');
+        return;
+      }
+      setCustomDraft({ label: '', baseUrl: '', api: 'openai', defaultModel: '', apiKey: '' });
+      if (result.lab) applyLab(result.lab, trace);
+      setStatus(result.note || 'Custom provider added. Key stored in Cloudflare.');
+      return;
+    }
+
+    if (!isNvidia && meta.apiKeyRequired && !form.apiKey.trim()) {
+      setSaving(false);
+      setError(`API key required for ${selected?.label || 'this provider'} before saving.`);
+      return;
+    }
+
+    const payload = {
       masterPrompt: form.masterPrompt,
       provider: form.provider,
       model: form.model,
@@ -214,8 +320,12 @@ function LlmLabPage({ onBack }) {
       maxTokens: form.maxTokens,
       captureThinking: form.captureThinking,
       showThinking: form.showThinking,
-      apiKey: form.apiKey.trim() ? form.apiKey.trim() : undefined,
-    });
+    };
+    if (isCustom) payload.baseUrl = form.baseUrl.trim();
+    // NVIDIA: never send a key. Others: only send when user pastes a new one.
+    if (!isNvidia && form.apiKey.trim()) payload.apiKey = form.apiKey.trim();
+
+    const result = await saveLlmLab(session, adminToken, payload);
     setSaving(false);
     if (!result.ok) {
       setError(result.error || 'Save failed.');
@@ -227,7 +337,7 @@ function LlmLabPage({ onBack }) {
       result.note ||
         (result.secretSaved
           ? `API key stored as Cloudflare secret ${result.secretName}.`
-          : 'Saved. New chats will use these LLM settings.')
+          : 'Saved. Keys were left unchanged.')
     );
   };
 
@@ -241,7 +351,21 @@ function LlmLabPage({ onBack }) {
       return;
     }
     await load();
-    setStatus('Reset lab defaults (Cloudflare API secrets were left unchanged).');
+    setStatus(result.note || 'Reset lab defaults. Keys and custom providers kept.');
+  };
+
+  const onDeleteCustom = async () => {
+    if (!isCustom || !form.provider) return;
+    setSaving(true);
+    setError('');
+    const result = await deleteCustomLlmProvider(session, adminToken, form.provider);
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error || 'Could not remove custom provider.');
+      return;
+    }
+    if (result.lab) applyLab(result.lab, trace);
+    setStatus('Custom provider removed. Reverted selection to NVIDIA.');
   };
 
   const onProbe = async () => {
@@ -258,6 +382,12 @@ function LlmLabPage({ onBack }) {
     setStatus('Probe complete — console updated with the last LLM exchange.');
   };
 
+  const providerHelper = isNvidia
+    ? 'Permanent NVIDIA key from Cloudflare — no key entry needed. Switch back here anytime.'
+    : isCustom
+      ? `${selected?.label || 'Custom'} · set base URL below`
+      : `${selected?.label || ''} · ${selected?.baseUrl || meta.baseUrl || ''}`;
+
   return (
     <Box className="stack-page">
       <Box className="hill-deco" sx={{ opacity: 0.7 }} />
@@ -270,8 +400,8 @@ function LlmLabPage({ onBack }) {
           LLM Lab
         </Typography>
         <Typography sx={{ mt: 0.5, fontSize: 15, color: '#3A3550' }}>
-          Choose a provider (base URL is fixed per provider). API keys are written to Cloudflare Worker
-          secrets and never kept in this page’s storage.
+          NVIDIA uses the permanent Cloudflare secret. Other providers keep a saved key until you paste a
+          new one. Custom providers also store their own base URL.
         </Typography>
 
         <Box className="panel" sx={{ mt: 3, display: 'grid', gap: 2.5 }}>
@@ -281,7 +411,7 @@ function LlmLabPage({ onBack }) {
             size="small"
             value={adminToken}
             onChange={(e) => setAdminToken(e.target.value)}
-            helperText="Needed only when ADMIN_TOKEN is set on the Worker. Leave blank for open beta admin."
+            helperText="Needed only when ADMIN_TOKEN is set on the Worker."
             fullWidth
           />
 
@@ -309,49 +439,121 @@ function LlmLabPage({ onBack }) {
                   select
                   label="Provider"
                   size="small"
-                  value={form.provider}
-                  onChange={(e) => {
-                    const next = providers.find((p) => p.id === e.target.value) || providers[0];
-                    setForm((prev) => ({
-                      ...prev,
-                      provider: next.id,
-                      model: prev.model || next.defaultModel || '',
-                      apiKey: '',
-                    }));
-                  }}
-                  helperText={`${providerMeta?.label || form.provider} · ${providerMeta?.baseUrl || meta.baseUrl || ''}`}
+                  value={addingCustom ? ADD_CUSTOM : form.provider}
+                  onChange={(e) => onProviderChange(e.target.value)}
+                  helperText={providerHelper}
                 >
                   {providers.map((p) => (
                     <MenuItem key={p.id} value={p.id}>
                       {p.label}
+                      {p.apiKeySet ? ' · key saved' : p.id === 'nvidia' ? '' : ' · key needed'}
                     </MenuItem>
                   ))}
+                  <MenuItem value={ADD_CUSTOM}>
+                    <AddIcon sx={{ fontSize: 16, mr: 0.75 }} />
+                    Add custom provider…
+                  </MenuItem>
                 </TextField>
                 <TextField
                   label="Model"
                   size="small"
-                  value={form.model}
-                  onChange={(e) => patch('model', e.target.value)}
-                  placeholder={providerMeta?.defaultModel || 'model-id'}
+                  value={addingCustom ? customDraft.defaultModel : form.model}
+                  onChange={(e) =>
+                    addingCustom
+                      ? setCustomDraft((prev) => ({ ...prev, defaultModel: e.target.value }))
+                      : patch('model', e.target.value)
+                  }
+                  placeholder={selected?.defaultModel || 'model-id'}
                   helperText="Exact model id for the selected provider."
                 />
               </Box>
 
-              <TextField
-                label={`API key → Cloudflare secret (${providerMeta?.secretName || '…'})`}
-                type="password"
-                size="small"
-                value={form.apiKey}
-                onChange={(e) => patch('apiKey', e.target.value)}
-                fullWidth
-                helperText={
-                  meta.cloudflareSecretsWritable
-                    ? meta.apiKeySet
-                      ? `Already set as ${meta.apiKeyMasked || providerMeta?.secretName}. Enter a new key to replace it in Cloudflare; the value is not stored on this page.`
-                      : `On Save, the key is written to Cloudflare secret ${providerMeta?.secretName} and cleared from this form.`
-                    : 'Cloudflare secret write is not configured (CF_ACCOUNT_ID / CF_API_TOKEN missing on Worker).'
-                }
-              />
+              {addingCustom && (
+                <Box sx={{ display: 'grid', gap: 1.5, p: 2, borderRadius: 2, border: '1px dashed #CFC4EA', bgcolor: '#F7F4FB' }}>
+                  <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>New custom provider</Typography>
+                  <TextField
+                    label="Display name"
+                    size="small"
+                    value={customDraft.label}
+                    onChange={(e) => setCustomDraft((prev) => ({ ...prev, label: e.target.value }))}
+                    fullWidth
+                  />
+                  <TextField
+                    label="LLM API base URL"
+                    size="small"
+                    value={customDraft.baseUrl}
+                    onChange={(e) => setCustomDraft((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                    placeholder="https://api.example.com/v1"
+                    fullWidth
+                    helperText="OpenAI-compatible hosts use /chat/completions under this base."
+                  />
+                  <TextField
+                    select
+                    label="API style"
+                    size="small"
+                    value={customDraft.api}
+                    onChange={(e) => setCustomDraft((prev) => ({ ...prev, api: e.target.value }))}
+                  >
+                    <MenuItem value="openai">OpenAI-compatible</MenuItem>
+                    <MenuItem value="anthropic">Anthropic Messages</MenuItem>
+                  </TextField>
+                  <TextField
+                    label="API key (saved to Cloudflare on Save)"
+                    type="password"
+                    size="small"
+                    value={customDraft.apiKey}
+                    onChange={(e) => setCustomDraft((prev) => ({ ...prev, apiKey: e.target.value }))}
+                    fullWidth
+                    required
+                  />
+                </Box>
+              )}
+
+              {!addingCustom && isCustom && (
+                <TextField
+                  label="LLM API base URL"
+                  size="small"
+                  value={form.baseUrl}
+                  onChange={(e) => patch('baseUrl', e.target.value)}
+                  placeholder="https://api.example.com/v1"
+                  fullWidth
+                  helperText="Shown only for custom providers."
+                />
+              )}
+
+              {!addingCustom && isNvidia && (
+                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#EDF4F0', border: '1px solid #C5DCCF' }}>
+                  <Typography sx={{ fontSize: 13, color: '#2F6B52', fontWeight: 600 }}>
+                    NVIDIA key is permanent
+                  </Typography>
+                  <Typography sx={{ mt: 0.5, fontSize: 13, color: '#3A3550' }}>
+                    Using Cloudflare secret <code>NVIDIA_API_KEY</code>
+                    {meta.apiKeySet ? ` (${meta.apiKeyMasked})` : ' — not detected on Worker'}.
+                    It cannot be changed from this page. Select NVIDIA anytime to revert to it without
+                    submitting a key.
+                  </Typography>
+                </Box>
+              )}
+
+              {!addingCustom && !isNvidia && (
+                <TextField
+                  label={
+                    meta.apiKeySet
+                      ? `Replace API key (optional) → ${meta.secretName || selected?.secretName}`
+                      : `API key required → ${meta.secretName || selected?.secretName}`
+                  }
+                  type="password"
+                  size="small"
+                  value={form.apiKey}
+                  onChange={(e) => patch('apiKey', e.target.value)}
+                  fullWidth
+                  helperText={
+                    meta.apiKeySet
+                      ? `Saved key on file (${meta.apiKeyMasked}). Leave blank to keep it; paste a new key only to override.`
+                      : 'Required once. Saved as a Cloudflare secret and reused on later saves until you replace it.'
+                  }
+                />
+              )}
 
               <Box>
                 <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1E1B2E' }}>
@@ -449,7 +651,7 @@ function LlmLabPage({ onBack }) {
                   disabled={saving}
                   sx={{ bgcolor: '#6B4FA0', '&:hover': { bgcolor: '#5B3FA0' } }}
                 >
-                  {saving ? 'Saving…' : 'Save LLM settings'}
+                  {saving ? 'Saving…' : addingCustom ? 'Save custom provider' : 'Save LLM settings'}
                 </Button>
                 <Button
                   variant="outlined"
@@ -460,6 +662,17 @@ function LlmLabPage({ onBack }) {
                 >
                   Reset defaults
                 </Button>
+                {!addingCustom && isCustom && (
+                  <Button
+                    color="inherit"
+                    startIcon={<DeleteOutlinedIcon />}
+                    onClick={onDeleteCustom}
+                    disabled={saving}
+                    sx={{ color: '#9A4A63' }}
+                  >
+                    Remove custom
+                  </Button>
+                )}
                 <Button size="small" onClick={load} disabled={loading || saving} sx={{ color: '#6A6580' }}>
                   Reload
                 </Button>
