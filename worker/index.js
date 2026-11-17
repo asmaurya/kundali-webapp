@@ -99,6 +99,21 @@ function llmConfig(env) {
   };
 }
 
+/** NIM (and some OpenAI-compat hosts) want strict user/assistant alternation after system. */
+function normalizeChatHistory(history) {
+  const out = [];
+  (Array.isArray(history) ? history : []).slice(-8).forEach((turn) => {
+    if (!turn || !turn.content) return;
+    const role = turn.role === 'assistant' ? 'assistant' : 'user';
+    if (out.length && out[out.length - 1].role === role) {
+      out[out.length - 1].content += `\n${turn.content}`;
+      return;
+    }
+    out.push({ role, content: String(turn.content) });
+  });
+  return out;
+}
+
 async function openAiReply(env, question, chartContext, history, locale, summary = '') {
   const cfg = llmConfig(env);
   if (!cfg) return null;
@@ -115,34 +130,79 @@ async function openAiReply(env, question, chartContext, history, locale, summary
   const messages = [
     {
       role: 'system',
-      content: `${TONE}\n${langLine}\n\nNatal chart context (anonymised):\n${chartContext}${summaryBlock}`,
+      content: `${TONE}\n${langLine}\n\nNatal chart context:\n${chartContext}${summaryBlock}`,
     },
-    ...(Array.isArray(history) ? history.slice(-8) : []),
+    ...normalizeChatHistory(history),
     { role: 'user', content: question },
   ];
+
+  // muse-glimmer is a reasoning model: low temp + tiny max_tokens often yields empty
+  // content because reasoning shares the token budget (NVIDIA docs).
+  const isReasoningNim = cfg.provider === 'nvidia' && /glimmer|muse|reason/i.test(cfg.model);
+  const body = {
+    model: cfg.model,
+    messages,
+    stream: false,
+    temperature: isReasoningNim ? 0.95 : 0.4,
+    max_tokens: isReasoningNim ? 4096 : 280,
+  };
+  if (isReasoningNim) {
+    body.top_p = 1;
+    body.reasoning_effort = 'minimal';
+  }
 
   const response = await fetch(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${cfg.key}`,
       'content-type': 'application/json',
+      accept: 'application/json',
     },
-    body: JSON.stringify({
-      model: cfg.model,
-      temperature: 0.4,
-      max_tokens: 280,
-      messages,
-    }),
+    body: JSON.stringify(body),
   });
 
+  const raw = await response.text();
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`LLM ${response.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`LLM ${response.status}: ${raw.slice(0, 280)}`);
   }
-  const payload = await response.json();
-  const text = payload.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error('Empty LLM response');
+  if (response.status === 202) {
+    throw new Error(`LLM 202 pending: ${raw.slice(0, 200)}`);
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    throw new Error(`LLM non-JSON body: ${raw.slice(0, 200)}`);
+  }
+
+  const message = payload.choices?.[0]?.message || {};
+  const text = extractMessageText(message);
+  if (!text) {
+    const finish = payload.choices?.[0]?.finish_reason || 'unknown';
+    throw new Error(
+      `Empty LLM response (${finish}): ${JSON.stringify(payload).slice(0, 280)}`
+    );
+  }
   return { text, provider: cfg.provider, used_llm: true };
+}
+
+function extractMessageText(message) {
+  if (!message || typeof message !== 'object') return '';
+  const direct = message.content ?? message.reasoning_content ?? message.text;
+  if (typeof direct === 'string') return direct.trim();
+  if (Array.isArray(direct)) {
+    return direct
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part.text === 'string') return part.text;
+        if (part && typeof part.content === 'string') return part.content;
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+  return '';
 }
 
 function expectedInvite(env) {
