@@ -46,9 +46,10 @@ function CreatingChartScreen({ onNext }) {
         }
 
         saveChart(chart);
+        // Never block chart completion on account sync (Safari can hang on a slow POST).
         const session = getSession();
         if (session) {
-          await pushRemoteAccount(session, buildAccountSnapshot());
+          Promise.resolve(pushRemoteAccount(session, buildAccountSnapshot())).catch(() => {});
         }
         setProgress(100);
         clearInterval(progressTimer);

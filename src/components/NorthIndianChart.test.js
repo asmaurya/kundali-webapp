@@ -30,9 +30,9 @@ test('renders planet glyphs and short names in the diamond chart', () => {
 
   const chart = screen.getByLabelText(/north indian natal chart/i);
   expect(chart).toBeInTheDocument();
-  expect(within(chart).getByText(/☉\s*Su/)).toBeInTheDocument();
-  expect(within(chart).getByText(/☽\s*Mo/)).toBeInTheDocument();
-  expect(within(chart).getByText(/♄\s*Sa/)).toBeInTheDocument();
+  expect(within(chart).getByText(/☉\uFE0E?\s*Su/)).toBeInTheDocument();
+  expect(within(chart).getByText(/☽\uFE0E?\s*Mo/)).toBeInTheDocument();
+  expect(within(chart).getByText(/♄\uFE0E?\s*Sa/)).toBeInTheDocument();
   const legend = screen.getByLabelText(/chart legend/i);
   expect(legend).toBeInTheDocument();
   expect(within(legend).getByText(/Uchch/i)).toBeInTheDocument();
@@ -53,7 +53,7 @@ test('Hindi locale uses Hindi planet names with glyphs', () => {
       showLegend={false}
     />
   );
-  expect(screen.getByText(/☉\s*सू/)).toBeInTheDocument();
+  expect(screen.getByText(/☉\uFE0E?\s*सू/)).toBeInTheDocument();
 });
 
 test('sign label mode shows sign abbreviations', () => {

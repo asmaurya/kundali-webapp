@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
 import {
   FLAG_LEGEND,
+  canonicalPlanetName,
   chartLabelForPlanet,
   enrichGrahas,
   planetLabel,
@@ -147,12 +148,20 @@ function NorthIndianChart({
   const grahaByName = useMemo(() => {
     const map = {};
     enriched.forEach((g) => {
-      map[g.name] = g;
+      const key = canonicalPlanetName(g.name || g.id);
+      if (key) map[key] = g;
+      if (g.name) map[g.name] = g;
     });
     return map;
   }, [enriched]);
 
   const cells = useMemo(() => {
+    const planetsFromGrahas = (house) =>
+      enriched
+        .filter((g) => Number(g.house) === house)
+        .map((g) => canonicalPlanetName(g.name || g.id))
+        .filter(Boolean);
+
     return Array.from({ length: 12 }, (_, index) => {
       const house = index + 1;
       const row = houses.find((item) => item.house === house) || {
@@ -160,27 +169,42 @@ function NorthIndianChart({
         sign: '',
         planets: [],
       };
+      let planets = (row.planets || [])
+        .map((entry) => canonicalPlanetName(entry))
+        .filter(Boolean);
+      // If house rows lack names (older saves / partial API payloads), rebuild from grahas.
+      if (!planets.length && enriched.length) {
+        planets = planetsFromGrahas(house);
+      }
       const rashiNumber = ((lagnaRashi - 1 + house - 1) % 12) + 1;
       const poly = HOUSE_POLYGONS[house];
       const center = centroid(poly);
-      return { house, row, rashiNumber, poly, center };
+      return {
+        house,
+        row: { ...row, planets },
+        rashiNumber,
+        poly,
+        center,
+      };
     });
-  }, [houses, lagnaRashi]);
+  }, [houses, lagnaRashi, enriched]);
 
   const formatPlanet = (name, houseSign) => {
-    const graha = grahaByName[name];
+    const key = canonicalPlanetName(name);
+    const graha = grahaByName[key] || grahaByName[name];
     const signName = graha?.rashiName || houseSign || '';
     const marks = graha?.marks || '';
     if (labelMode === 'sign') {
       const abbr = signShort[signName] || signName.slice(0, 2);
       return `${abbr}${marks}`;
     }
-    return `${chartLabelForPlanet(name, lang)}${marks}`;
+    return `${chartLabelForPlanet(key || name, lang)}${marks}`;
   };
 
   const hoverTitle = (name, houseSign) => {
-    const graha = grahaByName[name];
-    const display = planetLabel(name, lang);
+    const key = canonicalPlanetName(name);
+    const graha = grahaByName[key] || grahaByName[name];
+    const display = planetLabel(key || name, lang);
     const signName = graha?.rashiName || houseSign || '';
     const bits = [display];
     if (signName) bits.push(signName);
@@ -203,7 +227,7 @@ function NorthIndianChart({
           bgcolor: '#FDFBFF',
           border: '2px solid #3B3050',
           borderRadius: 2,
-          overflow: 'hidden',
+          overflow: 'visible',
         }}
         aria-label={label}
       >
@@ -220,11 +244,11 @@ function NorthIndianChart({
               <text
                 x={center.x}
                 y={center.y - (row.planets.length ? 14 : 0)}
+                dy="0.35em"
                 textAnchor="middle"
-                dominantBaseline="middle"
                 fill="#6A6580"
                 fontSize="10"
-                fontFamily="inherit"
+                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
               >
                 {rashiNumber}
               </text>
@@ -234,25 +258,26 @@ function NorthIndianChart({
                 const stack = count > 2;
                 const x = stack
                   ? center.x
-                  : center.x + (index - (count - 1) / 2) * 28;
+                  : center.x + (index - (count - 1) / 2) * 32;
                 const y = stack
-                  ? center.y + 2 + index * 13
-                  : center.y + 14;
+                  ? center.y + 4 + index * 14
+                  : center.y + 16;
+                const planetKey = canonicalPlanetName(name);
                 return (
                   <text
-                    key={`${house}-${name}`}
+                    key={`${house}-${planetKey || name}-${index}`}
                     x={x}
                     y={y}
+                    dy="0.35em"
                     textAnchor="middle"
-                    dominantBaseline="middle"
                     fill="#5B3FA0"
-                    fontSize={labelMode === 'planet' ? 10 : 11}
+                    fontSize={labelMode === 'planet' ? 11 : 11}
                     fontWeight="700"
-                    fontFamily="Segoe UI Symbol, Noto Sans Symbols, DejaVu Sans, sans-serif"
+                    fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', 'Apple Symbols', sans-serif"
                     style={{ cursor: 'default' }}
                   >
-                    <title>{hoverTitle(name, row.sign)}</title>
-                    {formatPlanet(name, row.sign)}
+                    <title>{hoverTitle(planetKey || name, row.sign)}</title>
+                    {formatPlanet(planetKey || name, row.sign)}
                   </text>
                 );
               })}

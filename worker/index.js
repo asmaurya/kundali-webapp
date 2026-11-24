@@ -52,7 +52,6 @@ const DEFAULT_LLM_LAB = {
   masterPrompt: '',
   provider: 'nvidia',
   model: '',
-  temperature: 0.4,
   topP: 1,
   frequencyPenalty: 0,
   presencePenalty: 0,
@@ -346,7 +345,6 @@ function publicLlmLabView(lab, env) {
       : '',
     apiKeyRequired: resolvedMeta.id !== 'nvidia' && !keySet,
     cloudflareSecretsWritable: Boolean(env.CF_ACCOUNT_ID && env.CF_API_TOKEN),
-    temperature: Number(lab.temperature ?? DEFAULT_LLM_LAB.temperature),
     topP: Number(lab.topP ?? DEFAULT_LLM_LAB.topP),
     frequencyPenalty: Number(lab.frequencyPenalty ?? 0),
     presencePenalty: Number(lab.presencePenalty ?? 0),
@@ -583,7 +581,6 @@ function llmConfig(env, lab = null) {
     provider: meta.id,
     api: meta.api,
     secretName: meta.secretName,
-    temperature: clampNumber(lab?.temperature, 0, 2, 0.4),
     topP: clampNumber(lab?.topP, 0, 1, 1),
     frequencyPenalty: clampNumber(lab?.frequencyPenalty, -2, 2, 0),
     presencePenalty: clampNumber(lab?.presencePenalty, -2, 2, 0),
@@ -658,7 +655,6 @@ async function callOpenAiCompatible(cfg, system, history, userQuestion) {
       { role: 'user', content: userQuestion },
     ],
     stream: false,
-    temperature: isReasoningNim ? Math.max(cfg.temperature, 0.95) : cfg.temperature,
     max_tokens: isReasoningNim ? Math.max(cfg.maxTokens, 4096) : cfg.maxTokens,
     top_p: cfg.topP,
   };
@@ -723,7 +719,6 @@ async function callAnthropic(cfg, system, history, userQuestion) {
   const body = {
     model: cfg.model,
     max_tokens: cfg.maxTokens,
-    temperature: cfg.temperature,
     system,
     messages: normalized,
   };
@@ -779,7 +774,6 @@ async function openAiReply(env, question, chartContext, history, locale, summary
 
   const parts = buildPromptParts(env, lab, question, chartContext, locale, summary, cfg);
   const params = {
-    temperature: cfg.temperature,
     topP: cfg.topP,
     frequencyPenalty: cfg.frequencyPenalty,
     presencePenalty: cfg.presencePenalty,
@@ -1299,7 +1293,6 @@ async function handleLlmLab(request, env) {
     delete next.apiKey;
     if (typeof body.masterPrompt === 'string') next.masterPrompt = body.masterPrompt.slice(0, 12000);
     if (typeof body.model === 'string') next.model = body.model.trim().slice(0, 200);
-    if (body.temperature != null) next.temperature = clampNumber(body.temperature, 0, 2, existing.temperature);
     if (body.topP != null) next.topP = clampNumber(body.topP, 0, 1, existing.topP);
     if (body.frequencyPenalty != null) {
       next.frequencyPenalty = clampNumber(body.frequencyPenalty, -2, 2, existing.frequencyPenalty);

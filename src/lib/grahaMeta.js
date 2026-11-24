@@ -3,16 +3,17 @@
  * Flags are derived from sidereal longitude / rashi (Swiss natal JSON).
  */
 
+/** Text-presentation glyphs (U+FE0E) so Safari/iOS does not render them as blank emoji. */
 export const PLANET_GLYPH = {
-  Sun: '☉',
-  Moon: '☽',
-  Mars: '♂',
-  Mercury: '☿',
-  Jupiter: '♃',
-  Venus: '♀',
-  Saturn: '♄',
-  Rahu: '☊',
-  Ketu: '☋',
+  Sun: '☉\uFE0E',
+  Moon: '☽\uFE0E',
+  Mars: '♂\uFE0E',
+  Mercury: '☿\uFE0E',
+  Jupiter: '♃\uFE0E',
+  Venus: '♀\uFE0E',
+  Saturn: '♄\uFE0E',
+  Rahu: '☊\uFE0E',
+  Ketu: '☋\uFE0E',
 };
 
 export const PLANET_NAME = {
@@ -185,12 +186,60 @@ export function planetLabel(name, lang = 'en', { short = false } = {}) {
   return pack[name] || name;
 }
 
+const PLANET_ALIASES = {
+  sun: 'Sun',
+  moon: 'Moon',
+  mars: 'Mars',
+  mercury: 'Mercury',
+  jupiter: 'Jupiter',
+  venus: 'Venus',
+  saturn: 'Saturn',
+  rahu: 'Rahu',
+  ketu: 'Ketu',
+  su: 'Sun',
+  mo: 'Moon',
+  ma: 'Mars',
+  me: 'Mercury',
+  ju: 'Jupiter',
+  ve: 'Venus',
+  sa: 'Saturn',
+  ra: 'Rahu',
+  ke: 'Ketu',
+  सूर्य: 'Sun',
+  चंद्र: 'Moon',
+  मंगल: 'Mars',
+  बुध: 'Mercury',
+  गुरु: 'Jupiter',
+  शुक्र: 'Venus',
+  शनि: 'Saturn',
+  राहु: 'Rahu',
+  केतु: 'Ketu',
+};
+
+/** Canonical English planet id for glyphs / dignity lookups. */
+export function canonicalPlanetName(name) {
+  if (!name) return '';
+  if (typeof name === 'object') {
+    return canonicalPlanetName(name.name || name.id || name.planet || '');
+  }
+  const raw = String(name).trim();
+  if (PLANET_GLYPH[raw] || PLANET_NAME.en[raw]) return raw;
+  const lower = raw.toLowerCase();
+  if (PLANET_ALIASES[lower]) return PLANET_ALIASES[lower];
+  const titled = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+  if (PLANET_GLYPH[titled] || PLANET_NAME.en[titled]) return titled;
+  return raw;
+}
+
 export function planetGlyph(name) {
-  return PLANET_GLYPH[name] || name.slice(0, 1);
+  const key = canonicalPlanetName(name);
+  return PLANET_GLYPH[key] || String(key || name || '?').slice(0, 1);
 }
 
 export function chartLabelForPlanet(name, lang = 'en') {
-  const glyph = planetGlyph(name);
-  const short = planetLabel(name, lang, { short: true });
+  const key = canonicalPlanetName(name);
+  const glyph = planetGlyph(key);
+  const short = planetLabel(key, lang, { short: true });
+  // Always include a readable short name; glyph alone can disappear in Safari SVG.
   return `${glyph} ${short}`;
 }

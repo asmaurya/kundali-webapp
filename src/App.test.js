@@ -95,7 +95,7 @@ beforeEach(() => {
                 thinking: 'Consider 10th house…',
                 output: 'Steady skill-building.',
                 usage: { promptTokens: 120, completionTokens: 40, totalTokens: 160 },
-                params: { temperature: 0.4 },
+                params: { topP: 1 },
               },
             };
           },
@@ -120,7 +120,6 @@ beforeEach(() => {
               apiKeyMasked: '•••• permanent Cloudflare secret (NVIDIA_API_KEY)',
               cloudflareSecretsWritable: true,
               customProviders: [],
-              temperature: 0.4,
               topP: 1,
               frequencyPenalty: 0,
               presencePenalty: 0,

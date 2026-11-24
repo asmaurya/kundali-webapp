@@ -70,7 +70,7 @@ function SettingsPage({ onBack }) {
           <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>LLM Lab</Typography>
           <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
             Edit the master chat prompt, choose provider and model, capture thinking separately, and
-            tweak temperature and related parameters.
+            tweak generation parameters.
           </Typography>
           <Button
             startIcon={<TuneIcon />}

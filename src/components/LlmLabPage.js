@@ -58,7 +58,6 @@ const emptyForm = {
   model: '',
   baseUrl: '',
   apiKey: '',
-  temperature: 0.4,
   topP: 1,
   frequencyPenalty: 0,
   presencePenalty: 0,
@@ -185,7 +184,6 @@ function LlmLabPage({ onBack }) {
       model: lab.model || '',
       baseUrl: lab.providerCustom ? lab.baseUrl || '' : '',
       apiKey: '',
-      temperature: Number(lab.temperature ?? 0.4),
       topP: Number(lab.topP ?? 1),
       frequencyPenalty: Number(lab.frequencyPenalty ?? 0),
       presencePenalty: Number(lab.presencePenalty ?? 0),
@@ -277,7 +275,6 @@ function LlmLabPage({ onBack }) {
       const result = await saveLlmLab(session, adminToken, {
         masterPrompt: form.masterPrompt,
         model: customDraft.defaultModel || form.model,
-        temperature: form.temperature,
         topP: form.topP,
         frequencyPenalty: form.frequencyPenalty,
         presencePenalty: form.presencePenalty,
@@ -313,7 +310,6 @@ function LlmLabPage({ onBack }) {
       masterPrompt: form.masterPrompt,
       provider: form.provider,
       model: form.model,
-      temperature: form.temperature,
       topP: form.topP,
       frequencyPenalty: form.frequencyPenalty,
       presencePenalty: form.presencePenalty,
@@ -554,20 +550,6 @@ function LlmLabPage({ onBack }) {
                   }
                 />
               )}
-
-              <Box>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1E1B2E' }}>
-                  Temperature · {form.temperature.toFixed(2)}
-                </Typography>
-                <Slider
-                  min={0}
-                  max={2}
-                  step={0.05}
-                  value={form.temperature}
-                  onChange={(_e, value) => patch('temperature', value)}
-                  sx={{ color: '#6B4FA0' }}
-                />
-              </Box>
 
               <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
                 <Box>
