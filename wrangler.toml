@@ -1,12 +1,28 @@
 # Cloudflare Worker + SPA assets. Workers Builds: npm ci && CI=true npm run build
-# Optional secrets:
-#   OPENAI_API_KEY / OPENAI_MODEL — live LLM answers
+# Optional secrets / vars (Cloudflare dashboard or `wrangler secret put`):
+#   NVIDIA_API_KEY or OPENAI_API_KEY — live LLM answers (Worker only; never in CRA .env)
+#   OPENAI_BASE_URL — default https://api.openai.com/v1
+#                      NVIDIA NIM: https://integrate.api.nvidia.com/v1
+#   OPENAI_MODEL — NIM / OpenAI model id
+#   MASTER_PROMPT — optional text appended to every LLM system prompt (Worker-only)
+#   ADMIN_TOKEN — optional gate for /api/admin/llm (LLM Lab). If unset, any beta session can edit.
+#   CF_ACCOUNT_ID / CF_API_TOKEN / CF_SCRIPT_NAME — let LLM Lab write API keys to Worker secrets
+#   ANTHROPIC_API_KEY — Claude provider (NVIDIA_API_KEY / OPENAI_API_KEY for the others)
 #   GOOGLE_PLACES_API_KEY — Google Places + Time Zone (Nominatim fallback if unset)
 #   BETA_INVITE_CODE — override invite code server-side
+#   CHART_API_URL — Vercel chart API origin (https://….vercel.app)
+#   CHART_API_KEY — shared bearer with Vercel CHART_API_KEY (optional)
 # Optional KV binding SETTINGS — durable cross-device account sync (Cache API used otherwise)
 name = "kundali-webapp"
 main = "worker/index.js"
 compatibility_date = "2025-11-01"
+
+# Non-secret LLM routing defaults (override in dashboard as needed). API keys stay Worker secrets.
+[vars]
+OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
+OPENAI_MODEL = "nvidia/nemotron-3.5-bolt-e4b"
+WORKER_BUILD = "llm-lab-on-main"
+MASTER_PROMPT = "Ground every answer in the querent kundali JSON provided in context. When a family kundali JSON is also present, compare both charts and state which placements support the reading. Prefer precise Jyotish references (lagna, houses, grahas, dasha) over generic advice."
 
 [assets]
 directory = "./build"

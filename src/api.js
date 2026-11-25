@@ -177,3 +177,124 @@ export async function placesDetails(placeId, session, hint = {}) {
     return null;
   }
 }
+export async function fetchLlmLab(session, adminToken = '') {
+  try {
+    const response = await fetch('/api/admin/llm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        adminToken,
+        action: 'get',
+      }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      return { ok: false, error: data.detail || data.error || 'unauthorized' };
+    }
+    return { ok: true, lab: data.lab, trace: data.trace || null };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+}
+
+/** Persist Worker LLM lab overrides. */
+export async function saveLlmLab(session, adminToken = '', lab = {}) {
+  try {
+    const response = await fetch('/api/admin/llm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        adminToken,
+        action: 'put',
+        ...lab,
+      }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      return { ok: false, error: data.detail || data.error || 'save_failed' };
+    }
+    return {
+      ok: true,
+      lab: data.lab,
+      secretSaved: Boolean(data.secretSaved),
+      secretName: data.secretName || null,
+      note: data.note || null,
+    };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+}
+
+/** Run a one-off LLM probe and return the color-console trace. */
+export async function probeLlmLab(session, adminToken = '', { question, chartContext, locale } = {}) {
+  try {
+    const response = await fetch('/api/admin/llm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        adminToken,
+        action: 'probe',
+        question,
+        chartContext,
+        locale,
+      }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      return { ok: false, error: data.detail || data.error || 'probe_failed', trace: data.trace || null };
+    }
+    return { ok: true, reply: data.reply, trace: data.trace || null, lab: data.lab };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+}
+
+/** Clear lab overrides back to Worker env defaults. */
+export async function resetLlmLab(session, adminToken = '') {
+  try {
+    const response = await fetch('/api/admin/llm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        adminToken,
+        action: 'reset',
+      }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      return { ok: false, error: data.detail || data.error || 'reset_failed' };
+    }
+    return { ok: true, lab: data.lab, note: data.note || null };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+}
+
+/** Remove a custom provider from the lab list (Cloudflare secret left in place). */
+export async function deleteCustomLlmProvider(session, adminToken = '', providerId) {
+  try {
+    const response = await fetch('/api/admin/llm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        adminToken,
+        action: 'deleteCustom',
+        providerId,
+      }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      return { ok: false, error: data.detail || data.error || 'delete_failed' };
+    }
+    return { ok: true, lab: data.lab };
+  } catch (error) {
+    return { ok: false, error: String(error.message || error) };
+  }
+}
+
+
