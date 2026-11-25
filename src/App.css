@@ -573,11 +573,40 @@
   min-height: 0;
   padding: 24px 24px 8px;
   overflow: hidden auto;
+  scroll-behavior: smooth;
 }
 
 .conversation__inner {
   width: min(820px, 100%);
   margin: 0 auto;
+}
+
+.conversation__scroll-anchor {
+  width: 100%;
+  height: 1px;
+  flex: 0 0 auto;
+}
+
+.chat-continue-card {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border: 1px solid #e6deef;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #faf8fc 0%, #f3eef8 100%);
+}
+
+.chat-continue-card__title {
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  color: #2f2a3d !important;
+}
+
+.chat-continue-card__body {
+  font-size: 12.5px !important;
+  line-height: 1.45 !important;
+  color: #6a6580 !important;
 }
 
 .conversation__date {

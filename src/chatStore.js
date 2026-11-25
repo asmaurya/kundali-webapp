@@ -519,6 +519,26 @@ export function ChatProvider({ children }) {
       });
     };
 
+    /** Start a fresh chat with the current thread's summary as seed context. */
+    const continueInNewChat = async () => {
+      if (!active) return null;
+      const summary =
+        active.executiveSummary ||
+        (await requestExecutiveSummary(active.id)) ||
+        buildLocalSummary(active.messages);
+      return startChat(active.astrologerId || 'astro-chat', {
+        title: `Continued · ${active.title}`.slice(0, 48),
+        handoffFromId: active.id,
+        seedBotText: `Namaste. Carrying forward from your previous chat:\n\n${summary}\n\nAsk what you would like to focus on next.`,
+        messages: [
+          {
+            role: 'bot',
+            text: `Namaste. Carrying forward from your previous chat:\n\n${summary}\n\nAsk what you would like to focus on next.`,
+          },
+        ],
+      });
+    };
+
     const resetToDemo = () => {
       setConversations(demoConversations);
       setActiveId('c1');
@@ -539,6 +559,7 @@ export function ChatProvider({ children }) {
       renameConversation,
       requestExecutiveSummary,
       handoffToHuman,
+      continueInNewChat,
       clearLockedPrefix,
       resetToDemo,
       byAstrologer: (astrologerId) => conversations.filter((c) => c.astrologerId === astrologerId),

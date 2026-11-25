@@ -26,6 +26,9 @@ import { ASTROLOGERS, useChat } from '../chatStore';
 import { useLocale } from '../i18n/LocaleContext';
 import { listProfiles } from '../lib/profiles';
 
+/** Free-tier soft nudge: after this many user messages, offer a fresh chat from summary. */
+export const FREE_CHAT_USER_MESSAGE_LIMIT = 5;
+
 function ChatInterface() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -42,6 +45,7 @@ function ChatInterface() {
     pendingUndo,
     requestExecutiveSummary,
     handoffToHuman,
+    continueInNewChat,
   } = useChat();
   const [draft, setDraft] = useState('');
   const [selectedTopics, setSelectedTopics] = useState([]);
@@ -49,7 +53,11 @@ function ChatInterface() {
   const [summarizing, setSummarizing] = useState(false);
   const [summaryAnchor, setSummaryAnchor] = useState(null);
   const [handoffOpen, setHandoffOpen] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const inputRef = useRef(null);
+  const messagesRef = useRef(null);
+  const bottomRef = useRef(null);
+  const stickToBottomRef = useRef(true);
   const requested = location.state && location.state.astrologerId;
   const draftPrefix = location.state && location.state.lockedPrefix;
   const openConversationId = location.state && location.state.conversationId;
@@ -101,7 +109,43 @@ function ChatInterface() {
     setDraft('');
     setSelectedTopics([]);
     setSelectedMembers([]);
+    stickToBottomRef.current = true;
   }, [active?.id]);
+
+  // Track whether the reader is near the bottom (so we don't yank them while scrolling up).
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return undefined;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottomRef.current = distance < 96;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [active?.id]);
+
+  const lastMessageText = active?.messages?.[active.messages.length - 1]?.text;
+  const messageCount = active?.messages?.length || 0;
+  const userMessageCount = useMemo(
+    () => (active?.messages || []).filter((m) => m.role === 'user').length,
+    [active?.messages]
+  );
+  const showContinueNudge = userMessageCount >= FREE_CHAT_USER_MESSAGE_LIMIT;
+
+  // Auto-scroll when messages grow or the latest reply updates (LLM / human / own send).
+  useEffect(() => {
+    if (!active?.id || !messageCount) return;
+    if (!stickToBottomRef.current) return;
+    const node = bottomRef.current;
+    if (!node) return;
+    requestAnimationFrame(() => {
+      if (typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } else if (messagesRef.current) {
+        messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+      }
+    });
+  }, [active?.id, messageCount, lastMessageText]);
 
   const astrologer = ASTROLOGERS[active?.astrologerId] || ASTROLOGERS['astro-chat'];
   const groups = Object.values(ASTROLOGERS).map((item) => ({
@@ -121,10 +165,21 @@ function ChatInterface() {
     event.preventDefault();
     const body = composeText();
     if (!body && !lockedPrefix) return;
+    stickToBottomRef.current = true;
     sendMessage(body || '');
     setDraft('');
     setSelectedTopics([]);
     setSelectedMembers([]);
+  };
+
+  const onContinueInNewChat = async () => {
+    if (continuing) return;
+    setContinuing(true);
+    try {
+      await continueInNewChat();
+    } finally {
+      setContinuing(false);
+    }
   };
 
   const toggleTopic = (label) => {
@@ -402,7 +457,7 @@ function ChatInterface() {
           </Box>
         )}
 
-        <Box className="conversation__messages">
+        <Box className="conversation__messages" ref={messagesRef}>
           <Box className="conversation__inner">
             <Box className="conversation__date">Today</Box>
 
@@ -424,10 +479,36 @@ function ChatInterface() {
                 </Box>
               </Box>
             ))}
+            <div ref={bottomRef} aria-hidden="true" className="conversation__scroll-anchor" />
           </Box>
         </Box>
 
         <Box className="composer-wrap">
+          {showContinueNudge && (
+            <Box className="chat-continue-card" role="status">
+              <Typography className="chat-continue-card__title">
+                This chat is getting long
+              </Typography>
+              <Typography className="chat-continue-card__body">
+                After {FREE_CHAT_USER_MESSAGE_LIMIT} messages, a fresh chat with a short summary
+                keeps answers sharper. Your current chat stays in the rail.
+              </Typography>
+              <Button
+                variant="contained"
+                size="small"
+                disabled={continuing}
+                onClick={onContinueInNewChat}
+                sx={{
+                  alignSelf: 'flex-start',
+                  textTransform: 'none',
+                  bgcolor: '#5B3FA0',
+                  '&:hover': { bgcolor: '#4A3285' },
+                }}
+              >
+                {continuing ? 'Preparing…' : 'Start new chat from summary'}
+              </Button>
+            </Box>
+          )}
           <Box sx={{ display: 'grid', gap: 0.75, px: 0.5, pb: 1 }} aria-label="Add context to your question">
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}>
               <Typography sx={{ fontSize: 11, color: '#8A849E', mr: 0.5, minWidth: 52 }}>Topics</Typography>
