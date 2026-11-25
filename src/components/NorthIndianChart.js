@@ -3,10 +3,10 @@ import { Box, Typography } from '@mui/material';
 import {
   FLAG_LEGEND,
   canonicalPlanetName,
-  chartLabelForPlanet,
   enrichGrahas,
   planetLabel,
 } from '../lib/grahaMeta';
+import PlanetGlyph, { GRAHA_ORDER, GRAHA_SANSKRIT, PlanetGlyphMark } from './PlanetGlyph';
 
 /** Classic North Indian diamond layout (viewBox 0 0 300 300). Houses are fixed; lagna sits in house 1. */
 export const HOUSE_POLYGONS = {
@@ -189,16 +189,13 @@ function NorthIndianChart({
     });
   }, [houses, lagnaRashi, enriched]);
 
-  const formatPlanet = (name, houseSign) => {
+  const formatSignLabel = (name, houseSign) => {
     const key = canonicalPlanetName(name);
     const graha = grahaByName[key] || grahaByName[name];
     const signName = graha?.rashiName || houseSign || '';
     const marks = graha?.marks || '';
-    if (labelMode === 'sign') {
-      const abbr = signShort[signName] || signName.slice(0, 2);
-      return `${abbr}${marks}`;
-    }
-    return `${chartLabelForPlanet(key || name, lang)}${marks}`;
+    const abbr = signShort[signName] || signName.slice(0, 2) || '?';
+    return `${abbr}${marks}`;
   };
 
   const hoverTitle = (name, houseSign) => {
@@ -258,27 +255,53 @@ function NorthIndianChart({
                 const stack = count > 2;
                 const x = stack
                   ? center.x
-                  : center.x + (index - (count - 1) / 2) * 32;
+                  : center.x + (index - (count - 1) / 2) * 34;
                 const y = stack
-                  ? center.y + 4 + index * 14
+                  ? center.y + 4 + index * 15
                   : center.y + 16;
                 const planetKey = canonicalPlanetName(name);
+                const graha = grahaByName[planetKey] || grahaByName[name];
+                const marks = graha?.marks || '';
+                const short = planetLabel(planetKey || name, lang, { short: true });
+                if (labelMode === 'sign') {
+                  return (
+                    <text
+                      key={`${house}-${planetKey || name}-${index}`}
+                      x={x}
+                      y={y}
+                      dy="0.35em"
+                      textAnchor="middle"
+                      fill="#5B3FA0"
+                      fontSize="11"
+                      fontWeight="700"
+                      fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+                      style={{ cursor: 'default' }}
+                    >
+                      <title>{hoverTitle(planetKey || name, row.sign)}</title>
+                      {formatSignLabel(planetKey || name, row.sign)}
+                    </text>
+                  );
+                }
                 return (
-                  <text
+                  <g
                     key={`${house}-${planetKey || name}-${index}`}
-                    x={x}
-                    y={y}
-                    dy="0.35em"
-                    textAnchor="middle"
-                    fill="#5B3FA0"
-                    fontSize={labelMode === 'planet' ? 11 : 11}
-                    fontWeight="700"
-                    fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', 'Apple Symbols', sans-serif"
+                    transform={`translate(${x - 16}, ${y - 7})`}
                     style={{ cursor: 'default' }}
                   >
                     <title>{hoverTitle(planetKey || name, row.sign)}</title>
-                    {formatPlanet(planetKey || name, row.sign)}
-                  </text>
+                    <PlanetGlyphMark planet={planetKey || name} size={13} />
+                    <text
+                      x="15"
+                      y="10"
+                      fill="#5B3FA0"
+                      fontSize="10"
+                      fontWeight="700"
+                      fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+                    >
+                      {short}
+                      {marks}
+                    </text>
+                  </g>
                 );
               })}
             </g>
@@ -290,9 +313,42 @@ function NorthIndianChart({
         <Box sx={{ mt: 1.25, maxWidth: 420 }}>
           <Typography sx={{ fontSize: 11, color: '#6A6580', mb: 0.75, textAlign: 'center' }}>
             {lang === 'hi'
-              ? 'भाव 1 = लग्न · अंक = राशि · ग्रह चिह्न + नाम'
-              : 'House 1 = Lagna · numbers = rashis · planet glyph + name'}
+              ? 'भाव 1 = लग्न · अंक = राशि · हिन्दू ग्रह चिह्न + नाम'
+              : 'House 1 = Lagna · numbers = rashis · Hindu graha glyph + name'}
           </Typography>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 0.75,
+              mb: 1.25,
+              px: 0.5,
+            }}
+            aria-label={lang === 'hi' ? 'ग्रह चिह्न' : 'Planet symbols'}
+          >
+            {GRAHA_ORDER.map((planet) => (
+              <Box
+                key={planet}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.75,
+                  color: '#1E1B2E',
+                  minWidth: 0,
+                }}
+              >
+                <PlanetGlyph planet={planet} size={18} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 11, fontWeight: 700, lineHeight: 1.15 }}>
+                    {GRAHA_SANSKRIT[planet]}
+                  </Typography>
+                  <Typography sx={{ fontSize: 10, color: '#6A6580', lineHeight: 1.15 }}>
+                    {planetLabel(planet, lang, { short: true })}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Box>
           <Box
             sx={{
               display: 'flex',

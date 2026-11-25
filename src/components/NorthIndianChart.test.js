@@ -30,9 +30,19 @@ test('renders planet glyphs and short names in the diamond chart', () => {
 
   const chart = screen.getByLabelText(/north indian natal chart/i);
   expect(chart).toBeInTheDocument();
-  expect(within(chart).getByText(/☉\uFE0E?\s*Su/)).toBeInTheDocument();
-  expect(within(chart).getByText(/☽\uFE0E?\s*Mo/)).toBeInTheDocument();
-  expect(within(chart).getByText(/♄\uFE0E?\s*Sa/)).toBeInTheDocument();
+  expect(within(chart).getByTestId('planet-glyph-Sun')).toBeInTheDocument();
+  expect(within(chart).getByTestId('planet-glyph-Moon')).toBeInTheDocument();
+  expect(within(chart).getByTestId('planet-glyph-Saturn')).toBeInTheDocument();
+  const labels = Array.from(chart.querySelectorAll('text')).map((n) => n.textContent || '');
+  expect(labels.some((t) => t.includes('Su'))).toBe(true);
+  expect(labels.some((t) => t.includes('Mo'))).toBe(true);
+  expect(labels.some((t) => t.includes('Sa'))).toBe(true);
+  const symbols = screen.getByLabelText(/planet symbols/i);
+  ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn', 'Rahu', 'Ketu'].forEach(
+    (planet) => {
+      expect(within(symbols).getByTestId(`planet-glyph-${planet}`)).toBeInTheDocument();
+    }
+  );
   const legend = screen.getByLabelText(/chart legend/i);
   expect(legend).toBeInTheDocument();
   expect(within(legend).getByText(/Uchch/i)).toBeInTheDocument();
@@ -53,7 +63,9 @@ test('Hindi locale uses Hindi planet names with glyphs', () => {
       showLegend={false}
     />
   );
-  expect(screen.getByText(/☉\uFE0E?\s*सू/)).toBeInTheDocument();
+  expect(screen.getByTestId('planet-glyph-Sun')).toBeInTheDocument();
+  const labels = Array.from(document.querySelectorAll('text')).map((n) => n.textContent || '');
+  expect(labels.some((t) => t.includes('सू'))).toBe(true);
 });
 
 test('sign label mode shows sign abbreviations', () => {
@@ -73,4 +85,29 @@ test('sign label mode shows sign abbreviations', () => {
   );
   const labels = Array.from(container.querySelectorAll('text')).map((n) => n.textContent || '');
   expect(labels.some((t) => t.includes('Le'))).toBe(true);
+});
+
+test('renders Rahu and Ketu glyphs in the diamond chart', () => {
+  const houses = Array.from({ length: 12 }, (_, i) => ({
+    house: i + 1,
+    sign: 'Aries',
+    planets: i === 0 ? ['Rahu'] : i === 6 ? ['Ketu'] : [],
+  }));
+  render(
+    <NorthIndianChart
+      houses={houses}
+      grahas={[
+        { name: 'Rahu', rashi: 5, rashiName: 'Leo', longitude: 125, degree: 5, house: 1 },
+        { name: 'Ketu', rashi: 11, rashiName: 'Aquarius', longitude: 305, degree: 5, house: 7 },
+      ]}
+      lagnaRashi={5}
+      showLegend={false}
+    />
+  );
+  const chart = screen.getByLabelText(/north indian natal chart/i);
+  expect(within(chart).getByTestId('planet-glyph-Rahu')).toBeInTheDocument();
+  expect(within(chart).getByTestId('planet-glyph-Ketu')).toBeInTheDocument();
+  const labels = Array.from(chart.querySelectorAll('text')).map((n) => n.textContent || '');
+  expect(labels.some((t) => t.includes('Ra'))).toBe(true);
+  expect(labels.some((t) => t.includes('Ke'))).toBe(true);
 });

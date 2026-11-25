@@ -14,8 +14,9 @@ import {
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { buildSecondaryViews } from '../lib/chartViews';
-import { planetGlyph, planetLabel } from '../lib/grahaMeta';
+import { planetLabel } from '../lib/grahaMeta';
 import NorthIndianChart from './NorthIndianChart';
+import PlanetGlyph from './PlanetGlyph';
 
 function StrengthRows({ rows }) {
   return (
@@ -189,8 +190,8 @@ function ChartSecondaryPanel({ chart, lang = 'en', labelMode = 'planet' }) {
                     key: 'planet',
                     label: lang === 'hi' ? 'ग्रह' : 'Graha',
                     render: (row) => (
-                      <span>
-                        <span style={{ marginRight: 6 }}>{planetGlyph(row.glyph || row.planet)}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <PlanetGlyph planet={row.glyph || row.planet} size={16} />
                         {row.planet}
                       </span>
                     ),
@@ -217,8 +218,8 @@ function ChartSecondaryPanel({ chart, lang = 'en', labelMode = 'planet' }) {
                         key: 'planet',
                         label: lang === 'hi' ? 'ग्रह' : 'Graha',
                         render: (row) => (
-                          <span>
-                            <span style={{ marginRight: 6 }}>{planetGlyph(row.planet)}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <PlanetGlyph planet={row.planet} size={16} />
                             {row.planetLabel || planetLabel(row.planet, lang)}
                           </span>
                         ),

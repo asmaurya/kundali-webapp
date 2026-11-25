@@ -11,9 +11,9 @@ import {
 import {
   enrichGrahas,
   formatDegreeDms,
-  planetGlyph,
   planetLabel,
 } from '../lib/grahaMeta';
+import PlanetGlyph from './PlanetGlyph';
 
 function GrahaDegreeTable({ chart, lang = 'en' }) {
   const rows = useMemo(() => enrichGrahas(chart?.grahas || []), [chart]);
@@ -62,8 +62,10 @@ function GrahaDegreeTable({ chart, lang = 'en' }) {
             {rows.map((g) => (
               <TableRow key={g.id || g.name} hover>
                 <TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
-                  <span style={{ marginRight: 6 }}>{planetGlyph(g.name)}</span>
-                  {planetLabel(g.name, lang)}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <PlanetGlyph planet={g.name} size={16} />
+                    {planetLabel(g.name, lang)}
+                  </span>
                 </TableCell>
                 <TableCell>{g.rashiName}</TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>

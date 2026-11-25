@@ -3,7 +3,10 @@
  * Flags are derived from sidereal longitude / rashi (Swiss natal JSON).
  */
 
-/** Text-presentation glyphs (U+FE0E) so Safari/iOS does not render them as blank emoji. */
+/**
+ * Legacy Unicode glyphs. Chart/table UI draws SVG marks via PlanetGlyph instead —
+ * these strings are kept only for canonicalPlanetName lookups and plain-text fallbacks.
+ */
 export const PLANET_GLYPH = {
   Sun: '☉\uFE0E',
   Moon: '☽\uFE0E',
