@@ -21,6 +21,7 @@ const ICONS = {
   services: BuildIcon,
   family: GroupsIcon,
   kundali: AccountBalanceIcon,
+  memory: AutoAwesomeIcon,
   subscription: SubscriptionsIcon,
   support: SupportAgentIcon,
   settings: SettingsIcon,

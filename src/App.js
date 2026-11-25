@@ -18,6 +18,7 @@ import SubscriptionPage from './components/SubscriptionPage';
 import SupportPage from './components/SupportPage';
 import SettingsPage from './components/SettingsPage';
 import LlmLabPage from './components/LlmLabPage';
+import MemoryPage from './components/MemoryPage';
 import ReportsPage from './components/ReportsPage';
 import AstrologersPage from './components/AstrologersPage';
 import RemediesPage from './components/RemediesPage';
@@ -37,6 +38,7 @@ import {
   saveSession,
 } from './betaSession';
 import { ensureLibrarySeeds } from './lib/libraryStore';
+import { countActiveMemory, ensureMemorySeeds } from './lib/memoryStore';
 import { getSelfProfile } from './lib/profiles';
 
 const ONBOARDING_PATHS = new Set(['/splash', '/invite', '/birth-details', '/creating-chart']);
@@ -84,6 +86,7 @@ function AppShell() {
       { label: t('navChat'), path: '/', icon: 'chat' },
       { label: t('navKundali'), path: '/kundali', icon: 'kundali' },
       { label: t('navFamily'), path: '/family', icon: 'family' },
+      { label: t('navMemory'), path: '/memory', icon: 'memory' },
       { label: t('navServices'), path: '/services', icon: 'services' },
       { label: t('navSubscription'), path: '/subscription', icon: 'subscription' },
       { label: t('navSupport'), path: '/support', icon: 'support' },
@@ -103,6 +106,7 @@ function AppShell() {
       '/services': t('navServices'),
       '/family': t('navFamily'),
       '/kundali': t('navKundali'),
+      '/memory': t('navMemory'),
       '/subscription': t('navSubscription'),
       '/support': t('navSupport'),
       '/settings': t('navSettings'),
@@ -159,8 +163,11 @@ function AppShell() {
   useEffect(() => {
     if (onboarded) {
       ensureLibrarySeeds({ memberName: getSelfProfile().name });
+      ensureMemorySeeds('self');
     }
   }, [onboarded]);
+
+  const memoryCount = onboarded ? countActiveMemory('self') : 0;
 
   const handleLogout = useCallback(() => {
     clearBetaSession();
@@ -270,6 +277,8 @@ function AppShell() {
             title={title}
             onMenuClick={handleMenuClick}
             newChat={isChatPage ? handleNewChat : null}
+            memoryCount={showChrome ? memoryCount : null}
+            onMemoryClick={showChrome ? () => handleNavigate('/memory') : null}
           />
         )}
         <Box
@@ -369,6 +378,14 @@ function AppShell() {
               element={
                 <RequireOnboarding>
                   <LlmLabPage onBack={() => navigate('/settings')} />
+                </RequireOnboarding>
+              }
+            />
+            <Route
+              path="/memory"
+              element={
+                <RequireOnboarding>
+                  <MemoryPage onBack={() => navigate('/')} />
                 </RequireOnboarding>
               }
             />
