@@ -18,6 +18,7 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import FamilyMemberCard from './FamilyMemberCard';
 import AppModal from './AppModal';
 import PlaceOfBirthField from './PlaceOfBirthField';
+import { birthFieldSx, birthPickerSlotProps } from './birthFieldSx';
 import {
   DEMO_FAMILY_MEMBERS,
   ensureFamilySeeds,
@@ -26,20 +27,6 @@ import {
   getSelfProfile,
   persistFamilyMembers,
 } from '../lib/profiles';
-
-const fieldSx = {
-  '& .MuiOutlinedInput-root': {
-    bgcolor: '#FDFBFF',
-    borderRadius: 2.5,
-  },
-  '& .MuiInputLabel-root': {
-    backgroundColor: '#FFFFFF',
-    px: 0.5,
-  },
-  '& .MuiInputLabel-shrink': {
-    transform: 'translate(14px, -9px) scale(0.75)',
-  },
-};
 
 const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'];
 
@@ -313,16 +300,15 @@ function FamilyListPage() {
               value={form.date}
               onChange={update('date')}
               fullWidth
-              InputLabelProps={{ shrink: true }}
-              inputProps={{ 'aria-label': 'Date of Birth' }}
-              InputProps={{
+              slotProps={birthPickerSlotProps({
+                ariaLabel: 'Date of Birth',
                 startAdornment: (
                   <InputAdornment position="start">
                     <CalendarMonthIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
                   </InputAdornment>
                 ),
-              }}
-              sx={fieldSx}
+              })}
+              sx={birthFieldSx}
             />
             <TextField
               label="Time of Birth"
@@ -330,16 +316,15 @@ function FamilyListPage() {
               value={form.time}
               onChange={update('time')}
               fullWidth
-              InputLabelProps={{ shrink: true }}
-              inputProps={{ 'aria-label': 'Time of Birth' }}
-              InputProps={{
+              slotProps={birthPickerSlotProps({
+                ariaLabel: 'Time of Birth',
                 startAdornment: (
                   <InputAdornment position="start">
                     <ScheduleIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
                   </InputAdornment>
                 ),
-              }}
-              sx={fieldSx}
+              })}
+              sx={birthFieldSx}
             />
             <PlaceOfBirthField
               label="Place of Birth"
