@@ -13,3 +13,7 @@ directory = "./build"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 html_handling = "auto-trailing-slash"
+
+# Required for Workers Builds branch previews (`npx wrangler preview`).
+# Empty is fine: assets/compatibility stay top-level; secrets live in Previews Base.
+[previews]

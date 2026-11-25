@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
 import { useLocation } from 'react-router-dom';
-import AddIcon from '@mui/icons-material/Add';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import SendIcon from '@mui/icons-material/Send';
 import VerifiedIcon from '@mui/icons-material/Verified';
@@ -49,10 +48,6 @@ function ChatInterface() {
   }, [requested, conversations, openConversation, startChat]);
 
   const astrologer = ASTROLOGERS[active.astrologerId] || ASTROLOGERS['astro-chat'];
-  const groups = Object.values(ASTROLOGERS).map((item) => ({
-    astrologer: item,
-    chats: conversations.filter((conversation) => conversation.astrologerId === item.id),
-  }));
 
   const submit = (event) => {
     event.preventDefault();
@@ -81,73 +76,6 @@ function ChatInterface() {
 
   return (
     <Box className="chat-page">
-      <aside className="chats-rail" aria-label="Chat history">
-        <Box className="chats-rail__head">
-          <span className="chats-rail__label">{t('chats')}</span>
-          <Tooltip title="Start a new chat with the AI astrologer">
-            <IconButton
-              size="small"
-              aria-label="Start a new chat with the AI astrologer"
-              onClick={() => startChat('astro-chat')}
-              sx={{ color: '#5B3FA0' }}
-            >
-              <AddIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-
-        {groups.map((group) => (
-          <Box
-            className="chats-group"
-            key={group.astrologer.id}
-            style={{
-              backgroundColor: group.astrologer.tint,
-              borderColor: `${group.astrologer.accent}1f`,
-            }}
-          >
-            <Box className="chats-group__head">
-              <span
-                className="chats-group__dot"
-                style={{ backgroundColor: group.astrologer.accent }}
-                aria-hidden="true"
-              />
-              <span className="chats-group__name" style={{ color: group.astrologer.accent }}>
-                {group.astrologer.name}
-              </span>
-              <Tooltip title={`New chat with ${group.astrologer.name}`}>
-                <IconButton
-                  size="small"
-                  aria-label={`New chat with ${group.astrologer.name}`}
-                  onClick={() => startChat(group.astrologer.id)}
-                  sx={{ color: group.astrologer.accent }}
-                >
-                  <AddIcon sx={{ fontSize: 15 }} />
-                </IconButton>
-              </Tooltip>
-            </Box>
-            {group.chats.length === 0 && (
-              <Box className="chats-group__empty">No conversations yet</Box>
-            )}
-            {group.chats.map((conversation) => (
-              <button
-                type="button"
-                key={conversation.id}
-                className={`chat-item${conversation.id === active.id ? ' chat-item--active' : ''}`}
-                onClick={() => openConversation(conversation.id)}
-                style={
-                  conversation.id === active.id
-                    ? { boxShadow: `inset 2px 0 0 ${group.astrologer.accent}` }
-                    : undefined
-                }
-              >
-                <span className="chat-item__title">{conversation.title}</span>
-                <span className="chat-item__meta">{conversation.updated}</span>
-              </button>
-            ))}
-          </Box>
-        ))}
-      </aside>
-
       <section className="conversation" aria-label="Conversation">
         <header className="conversation__header">
           <span className="conversation__avatar">{astrologer.initials}</span>
@@ -162,6 +90,7 @@ function ChatInterface() {
               <span
                 className={`presence-dot${astrologer.online ? ' presence-dot--online' : ''}`}
                 style={{ display: 'inline-block', marginRight: 6, verticalAlign: '1px' }}
+                aria-hidden="true"
               />
               {astrologer.online ? 'Online' : 'Offline'} · {astrologer.speciality}
             </Box>
