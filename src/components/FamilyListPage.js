@@ -20,7 +20,6 @@ import AppModal from './AppModal';
 import PlaceOfBirthField from './PlaceOfBirthField';
 import { birthFieldSx, birthPickerSlotProps } from './birthFieldSx';
 import {
-  DEMO_FAMILY_MEMBERS,
   ensureFamilySeeds,
   ensureMemberChart,
   getFamilyOnly,
