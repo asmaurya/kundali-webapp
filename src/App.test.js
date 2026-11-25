@@ -123,7 +123,7 @@ beforeEach(() => {
               topP: 1,
               frequencyPenalty: 0,
               presencePenalty: 0,
-              maxTokens: 280,
+              maxTokens: 512,
               captureThinking: true,
               showThinking: false,
               providers: [

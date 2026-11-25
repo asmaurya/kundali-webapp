@@ -61,7 +61,7 @@ const emptyForm = {
   topP: 1,
   frequencyPenalty: 0,
   presencePenalty: 0,
-  maxTokens: 280,
+  maxTokens: 512,
   captureThinking: true,
   showThinking: false,
 };
@@ -123,6 +123,7 @@ function formatUsage(usage) {
   const lines = [];
   if (usage.promptTokens != null) lines.push(`prompt_tokens: ${usage.promptTokens}`);
   if (usage.completionTokens != null) lines.push(`completion_tokens: ${usage.completionTokens}`);
+  if (usage.thinkingTokens != null) lines.push(`thinking_tokens: ${usage.thinkingTokens}`);
   if (usage.totalTokens != null) lines.push(`total_tokens: ${usage.totalTokens}`);
   const raw = usage.raw || {};
   Object.keys(raw).forEach((key) => {
@@ -187,7 +188,7 @@ function LlmLabPage({ onBack }) {
       topP: Number(lab.topP ?? 1),
       frequencyPenalty: Number(lab.frequencyPenalty ?? 0),
       presencePenalty: Number(lab.presencePenalty ?? 0),
-      maxTokens: Number(lab.maxTokens ?? 280),
+      maxTokens: Number(lab.maxTokens ?? 512),
       captureThinking: lab.captureThinking !== false,
       showThinking: Boolean(lab.showThinking),
     });

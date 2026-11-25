@@ -55,7 +55,7 @@ const DEFAULT_LLM_LAB = {
   topP: 1,
   frequencyPenalty: 0,
   presencePenalty: 0,
-  maxTokens: 280,
+  maxTokens: 512,
   captureThinking: true,
   showThinking: false,
   /** @type {Array<{id:string,label:string,baseUrl:string,api:string,secretName:string,defaultModel?:string}>} */
@@ -584,7 +584,7 @@ function llmConfig(env, lab = null) {
     topP: clampNumber(lab?.topP, 0, 1, 1),
     frequencyPenalty: clampNumber(lab?.frequencyPenalty, -2, 2, 0),
     presencePenalty: clampNumber(lab?.presencePenalty, -2, 2, 0),
-    maxTokens: clampNumber(lab?.maxTokens, 64, 8192, 280),
+    maxTokens: clampNumber(lab?.maxTokens, 64, 8192, 512),
     captureThinking: lab ? lab.captureThinking !== false : true,
     showThinking: Boolean(lab?.showThinking),
   };
@@ -631,9 +631,15 @@ function buildPromptParts(env, lab, question, chartContext, locale, summary, cfg
 
 function usageFromPayload(payload) {
   const u = payload?.usage || {};
+  const thinkingTokens =
+    u.output_tokens_details?.thinking_tokens ??
+    u.thinking_tokens ??
+    u.completion_tokens_details?.reasoning_tokens ??
+    null;
   return {
     promptTokens: u.prompt_tokens ?? u.input_tokens ?? null,
     completionTokens: u.completion_tokens ?? u.output_tokens ?? null,
+    thinkingTokens,
     totalTokens:
       u.total_tokens ??
       (u.prompt_tokens != null && u.completion_tokens != null
@@ -716,14 +722,31 @@ async function callAnthropic(cfg, system, history, userQuestion) {
     normalized.unshift({ role: 'user', content: userQuestion });
   }
 
+  // Claude counts thinking toward max_tokens. A 280 cap with ~236 thinking tokens
+  // left only ~44 for the visible answer and truncated Hindi mid-sentence.
+  const answerBudget = Math.max(Number(cfg.maxTokens) || 512, 400);
+  const thinkingBudget = cfg.captureThinking
+    ? Math.max(1536, answerBudget * 3)
+    : Math.max(768, answerBudget * 2);
+  const maxTokens = Math.min(8192, answerBudget + thinkingBudget);
+
   const body = {
     model: cfg.model,
-    max_tokens: cfg.maxTokens,
+    max_tokens: maxTokens,
     system,
     messages: normalized,
   };
-  // top_p is supported; frequency/presence penalties are not on Anthropic Messages.
-  if (cfg.topP != null && cfg.topP < 1) body.top_p = cfg.topP;
+
+  if (cfg.captureThinking) {
+    // Explicit extended thinking so blocks are returned (and budget is reserved).
+    body.thinking = {
+      type: 'enabled',
+      budget_tokens: Math.min(thinkingBudget, maxTokens - Math.min(answerBudget, 512)),
+    };
+  } else if (cfg.topP != null && cfg.topP < 1) {
+    // top_p is incompatible with Anthropic extended thinking.
+    body.top_p = cfg.topP;
+  }
 
   const started = Date.now();
   const response = await fetch(`${cfg.baseUrl}/messages`, {
@@ -746,11 +769,18 @@ async function callAnthropic(cfg, system, history, userQuestion) {
     throw new Error(`LLM non-JSON body: ${raw.slice(0, 200)}`);
   }
   const blocks = Array.isArray(payload.content) ? payload.content : [];
-  const thinking = blocks
+  let thinking = blocks
     .filter((b) => b && (b.type === 'thinking' || b.type === 'redacted_thinking'))
-    .map((b) => b.thinking || b.data || '')
+    .map((b) => {
+      if (b.type === 'redacted_thinking') return '[redacted thinking]';
+      return b.thinking || b.data || b.text || '';
+    })
     .filter(Boolean)
     .join('\n\n');
+  const usage = usageFromPayload(payload);
+  if (!thinking && usage.thinkingTokens) {
+    thinking = `(internal/adaptive thinking used ${usage.thinkingTokens} tokens; no thinking content block returned)`;
+  }
   const text = finalizeAssistantText(
     blocks
       .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
@@ -761,9 +791,16 @@ async function callAnthropic(cfg, system, history, userQuestion) {
   return {
     text,
     thinking,
-    usage: usageFromPayload(payload),
+    usage,
     latencyMs,
-    requestBody: { ...body, system: undefined, messages: undefined, messageCount: body.messages.length },
+    requestBody: {
+      ...body,
+      system: undefined,
+      messages: undefined,
+      messageCount: body.messages.length,
+      answerBudget,
+      thinkingBudget: body.thinking?.budget_tokens || thinkingBudget,
+    },
     finishReason: payload.stop_reason || null,
   };
 }
@@ -778,6 +815,7 @@ async function openAiReply(env, question, chartContext, history, locale, summary
     frequencyPenalty: cfg.frequencyPenalty,
     presencePenalty: cfg.presencePenalty,
     maxTokens: cfg.maxTokens,
+    // Claude path expands this further so thinking cannot starve the answer.
     captureThinking: cfg.captureThinking,
     showThinking: cfg.showThinking,
   };

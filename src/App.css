@@ -625,6 +625,9 @@
   line-height: 1.55;
   color: #1e1b2e;
   border-radius: 12px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .msg__bubble--bot {
