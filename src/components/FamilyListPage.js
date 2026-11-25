@@ -19,12 +19,13 @@ import FamilyMemberCard from './FamilyMemberCard';
 import AppModal from './AppModal';
 import PlaceOfBirthField from './PlaceOfBirthField';
 import {
+  DEMO_FAMILY_MEMBERS,
+  ensureFamilySeeds,
   ensureMemberChart,
   getFamilyOnly,
   getSelfProfile,
   persistFamilyMembers,
 } from '../lib/profiles';
-import { loadFamilyMembers } from '../betaSession';
 
 const fieldSx = {
   '& .MuiOutlinedInput-root': {
@@ -42,33 +43,6 @@ const fieldSx = {
 
 const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'];
 
-const INITIAL_MEMBERS = [
-  {
-    id: 1,
-    name: 'Ramesh Sharma',
-    relation: 'Father',
-    date: '1962-03-12',
-    time: '06:15',
-    place: 'Jaipur, Rajasthan, India',
-    chartReady: false,
-  },
-  {
-    id: 2,
-    name: 'Sunita Sharma',
-    relation: 'Mother',
-    date: '1965-11-02',
-    time: '09:40',
-    place: 'Jaipur, Rajasthan, India',
-    chartReady: false,
-  },
-  {
-    id: 3,
-    name: 'Aman Sharma',
-    relation: 'Brother',
-    chartReady: false,
-  },
-];
-
 const EMPTY_FORM = {
   name: '',
   relation: 'Spouse',
@@ -82,14 +56,9 @@ const textButton = { color: '#5B3FA0' };
 
 function FamilyListPage() {
   const [members, setMembers] = useState(() => {
-    const stored = loadFamilyMembers(null);
-    const family = Array.isArray(stored)
-      ? getFamilyOnly()
-      : getFamilyOnly(INITIAL_MEMBERS).map((m) => ensureMemberChart(m));
-    if (!Array.isArray(stored)) {
-      persistFamilyMembers(family);
-    }
-    return [getSelfProfile(), ...family.map((m) => ensureMemberChart(m))];
+    ensureFamilySeeds();
+    const family = getFamilyOnly(DEMO_FAMILY_MEMBERS).map((m) => ensureMemberChart(m));
+    return [getSelfProfile(), ...family];
   });
 
   useEffect(() => {
@@ -185,7 +154,27 @@ function FamilyListPage() {
   };
 
   const stepOneValid = form.name.trim().length > 0;
-  const stepTwoValid = Boolean(form.date && form.time && form.place);
+  // Enable once date, time, and a place string are present. Prefer a resolved
+  // suggestion (lat/lon) when available; never leave the button stuck after a pick.
+  const placeReady = Boolean(
+    (typeof form.place === 'string' && form.place.trim()) ||
+      (placeMeta && (placeMeta.label || placeMeta.placeId))
+  );
+  const stepTwoValid = Boolean(form.date && form.time && placeReady);
+
+  const handlePlaceChange = (place) => {
+    setForm((current) => ({ ...current, place: place || '' }));
+  };
+
+  const handlePlaceResolved = (meta) => {
+    setPlaceMeta(meta);
+    if (meta && (meta.label || meta.placeId)) {
+      setForm((current) => ({
+        ...current,
+        place: meta.label || current.place || '',
+      }));
+    }
+  };
 
   return (
     <Box className="stack-page">
@@ -324,15 +313,14 @@ function FamilyListPage() {
               value={form.date}
               onChange={update('date')}
               fullWidth
-              slotProps={{
-                inputLabel: { shrink: true },
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <CalendarMonthIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ 'aria-label': 'Date of Birth' }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <CalendarMonthIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
+                  </InputAdornment>
+                ),
               }}
               sx={fieldSx}
             />
@@ -342,15 +330,14 @@ function FamilyListPage() {
               value={form.time}
               onChange={update('time')}
               fullWidth
-              slotProps={{
-                inputLabel: { shrink: true },
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <ScheduleIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ 'aria-label': 'Time of Birth' }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <ScheduleIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
+                  </InputAdornment>
+                ),
               }}
               sx={fieldSx}
             />
@@ -359,8 +346,8 @@ function FamilyListPage() {
               placeholder="Start typing a city…"
               hint="Pick a place from the suggestions for an accurate chart."
               value={form.place}
-              onChange={(place) => setForm((current) => ({ ...current, place }))}
-              onResolved={setPlaceMeta}
+              onChange={handlePlaceChange}
+              onResolved={handlePlaceResolved}
             />
           </Box>
         )}

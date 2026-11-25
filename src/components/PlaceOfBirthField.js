@@ -83,8 +83,31 @@ function PlaceOfBirthField({
 
   const pick = async (prediction) => {
     setOpen(false);
-    setQuery(prediction.description);
-    onChange?.(prediction.description);
+    const label = prediction.description || prediction.label || '';
+    setQuery(label);
+    // Update parent immediately so Create chart can enable before details resolve.
+    onChange?.(label);
+    if (prediction.lat != null && prediction.lon != null) {
+      onResolved?.({
+        placeId: prediction.placeId,
+        label,
+        lat: prediction.lat,
+        lon: prediction.lon,
+        countryCode: prediction.countryCode || '',
+        tzOffsetHours: prediction.tzOffsetHours,
+        source: prediction.provider || 'nominatim',
+      });
+    } else {
+      // Mark as selected even before lat/lon arrive so the wizard is not stuck.
+      onResolved?.({
+        placeId: prediction.placeId,
+        label,
+        lat: undefined,
+        lon: undefined,
+        countryCode: prediction.countryCode || '',
+        source: prediction.provider || 'pending',
+      });
+    }
     setLoading(true);
     const session = getSession();
     const place = await placesDetails(prediction.placeId, session, {
@@ -93,19 +116,10 @@ function PlaceOfBirthField({
     });
     setLoading(false);
     if (place) {
+      const resolvedLabel = place.label || label;
       onResolved?.(place);
-      setQuery(place.label || prediction.description);
-      onChange?.(place.label || prediction.description);
-    } else if (prediction.lat != null && prediction.lon != null) {
-      onResolved?.({
-        placeId: prediction.placeId,
-        label: prediction.description,
-        lat: prediction.lat,
-        lon: prediction.lon,
-        countryCode: prediction.countryCode || '',
-        tzOffsetHours: undefined,
-        source: prediction.provider || 'nominatim',
-      });
+      setQuery(resolvedLabel);
+      onChange?.(resolvedLabel);
     }
   };
 
@@ -147,7 +161,7 @@ function PlaceOfBirthField({
           elevation={4}
           sx={{
             position: 'absolute',
-            zIndex: 20,
+            zIndex: 60,
             left: 0,
             right: 0,
             mt: 0.5,
