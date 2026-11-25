@@ -1,5 +1,10 @@
-import { chartContextForPrompt, generateChart } from './lib/chartEngine';
+import { buildLlmChartContext } from './lib/chartEngine';
 import { BETA_INVITE_CODE, buildAccountSnapshot } from './betaSession';
+import {
+  askWithPrivacy,
+  getChartProvider,
+  getUsageMeter,
+} from './providers';
 
 async function readJson(response) {
   const text = await response.text();
@@ -10,47 +15,102 @@ async function readJson(response) {
   }
 }
 
-/** Compute a real natal chart in the browser (no API key). */
-export function createChart(birthDetails) {
-  return generateChart(birthDetails);
+/**
+ * Compute a natal chart via the active ChartProvider.
+ * Always returns a Promise — remote Swiss Ephemeris and local engines both work.
+ */
+export async function createChart(birthDetails) {
+  const provider = getChartProvider();
+  const chart = await Promise.resolve(provider.computeNatal(birthDetails));
+  try {
+    getUsageMeter().recordChart({
+      provider: chart?.provenance?.provider || provider.id,
+    });
+  } catch {
+    /* metering must never block chart creation */
+  }
+  return chart;
 }
 
 /**
- * Ask the Worker for an answer grounded in the chart.
- * Falls back to a local chart-aware reply if /api/chat is unavailable.
+ * Ask the AnswerProvider with anonymisation + rolling context.
+ * Returns `{ text, provider, used_llm, usage, warning? }` for chatStore.
  */
-export async function askOracle({ question, chart, history = [], locale = 'en', extraContext = '' }) {
-  const chartContext = `${chartContextForPrompt(chart)}${extraContext || ''}`;
-  try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        question,
-        chartContext,
-        locale,
-        history: history.map((m) => ({
-          role: m.role === 'bot' ? 'assistant' : 'user',
-          content: m.text,
-        })),
-      }),
+/** Ask the LLM for a short chat title (3–6 words). */
+export async function suggestChatTitle({ question, reply, history = [] }) {
+  const result = await askWithPrivacy({
+    question: `Propose a concise chat title (3 to 6 words, Title Case, no quotes) for this astrology conversation. Question: ${question}. Reply excerpt: ${String(reply || '').slice(0, 180)}`,
+    chartContext: 'Title helper only — ignore chart detail.',
+    messages: history.slice(-4),
+    locale: 'en',
+    people: {},
+    modelTier: 'flash',
+  });
+  const raw = String(result.answer || '')
+    .replace(/^["'\s]+|["'\s]+$/g, '')
+    .split('\n')[0]
+    .trim();
+  if (!raw || raw.length > 60) return '';
+  return raw;
+}
+
+/** Executive summary of a conversation for the user or a human handoff. */
+export async function summarizeConversation({ messages = [], chart }) {
+  const transcript = messages
+    .slice(-16)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Astrologer'}: ${m.text}`)
+    .join('\n');
+  const result = await askWithPrivacy({
+    question: `Write an executive summary (max 120 words) of this astrology chat for a human reader. Cover topics asked and guidance given. Transcript:\n${transcript}`,
+    chartContext: buildLlmChartContext({ querentChart: chart }),
+    messages: [],
+    locale: 'en',
+    people: {},
+    modelTier: 'flash',
+  });
+  return String(result.answer || '').trim();
+}
+
+export async function askOracle({
+  question,
+  chart,
+  chartContext,
+  history = [],
+  locale = 'en',
+  familyCharts = [],
+  people = {},
+  modelTier = 'flash',
+}) {
+  // Querent kundali is always in context; family charts are additive when provided.
+  const resolvedContext =
+    chartContext ||
+    buildLlmChartContext({
+      querentChart: chart,
+      familyCharts,
     });
-    if (!response.ok) {
-      const err = await readJson(response).catch(() => ({}));
-      throw new Error(err.error || `API ${response.status}`);
-    }
-    const data = await readJson(response);
-    if (!data.text) throw new Error('Empty reply');
-    return data;
-  } catch (error) {
-    const { scriptedReplyFor } = await import('./scriptedReplies');
-    return {
-      text: scriptedReplyFor(question),
-      provider: 'client-fallback',
-      used_llm: false,
-      warning: String(error.message || error),
-    };
+  const result = await askWithPrivacy({
+    question,
+    chartContext: resolvedContext,
+    messages: history,
+    locale,
+    people,
+    modelTier,
+  });
+
+  try {
+    getUsageMeter().recordLlm(result.usage || {}, {
+      provider: result.provider,
+    });
+  } catch {
+    /* ignore */
   }
+
+  return {
+    text: result.answer,
+    provider: result.provider,
+    used_llm: result.provider !== 'local-heuristic',
+    usage: result.usage,
+  };
 }
 
 export async function health() {
@@ -138,45 +198,7 @@ export async function pushRemoteAccount(session, account = buildAccountSnapshot(
   }
 }
 
-/** Google Places (or Nominatim fallback) autocomplete via Worker proxy. */
-export async function placesAutocomplete(input, session) {
-  const query = String(input || '').trim();
-  if (query.length < 2) return { predictions: [], provider: 'none' };
-  try {
-    const response = await fetch('/api/places/autocomplete', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        ...authBody(session),
-        input: query,
-      }),
-    });
-    if (!response.ok) return { predictions: [], provider: 'error' };
-    return readJson(response);
-  } catch {
-    return { predictions: [], provider: 'error' };
-  }
-}
-
-/** Resolve a place id to lat/lon/tz via Worker. */
-export async function placesDetails(placeId, session, hint = {}) {
-  try {
-    const response = await fetch('/api/places/details', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        ...authBody(session),
-        placeId,
-        ...hint,
-      }),
-    });
-    if (!response.ok) return null;
-    const data = await readJson(response);
-    return data.place || null;
-  } catch {
-    return null;
-  }
-}
+/** Load Worker LLM lab config (master prompt, model, params). */
 export async function fetchLlmLab(session, adminToken = '') {
   try {
     const response = await fetch('/api/admin/llm', {
@@ -297,4 +319,42 @@ export async function deleteCustomLlmProvider(session, adminToken = '', provider
   }
 }
 
+/** Google Places (or Nominatim fallback) autocomplete via Worker proxy. */
+export async function placesAutocomplete(input, session) {
+  const query = String(input || '').trim();
+  if (query.length < 2) return { predictions: [], provider: 'none' };
+  try {
+    const response = await fetch('/api/places/autocomplete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        input: query,
+      }),
+    });
+    if (!response.ok) return { predictions: [], provider: 'error' };
+    return readJson(response);
+  } catch {
+    return { predictions: [], provider: 'error' };
+  }
+}
 
+/** Resolve a place id to lat/lon/tz via Worker. */
+export async function placesDetails(placeId, session, hint = {}) {
+  try {
+    const response = await fetch('/api/places/details', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...authBody(session),
+        placeId,
+        ...hint,
+      }),
+    });
+    if (!response.ok) return null;
+    const data = await readJson(response);
+    return data.place || null;
+  } catch {
+    return null;
+  }
+}

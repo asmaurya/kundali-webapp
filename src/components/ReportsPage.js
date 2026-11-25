@@ -13,9 +13,12 @@ import {
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
+import { useNavigate } from 'react-router-dom';
 import { ensureLibrarySeeds, loadReports } from '../lib/libraryStore';
 import { getSelfProfile, listProfiles } from '../lib/profiles';
+import { useChat } from '../chatStore';
 
 function formatWhen(iso) {
   try {
@@ -68,11 +71,22 @@ function downloadReport(report) {
 }
 
 function ReportsPage({ onBack }) {
+  const navigate = useNavigate();
+  const { openConversation, conversations } = useChat();
   const self = getSelfProfile();
   ensureLibrarySeeds({ memberName: self.name });
   const [reports] = useState(() => loadReports().filter(isChatReport));
   const [memberFilter, setMemberFilter] = useState('all');
   const members = listProfiles();
+
+  const openSourceChat = (report) => {
+    if (report.conversationId && conversations.some((c) => c.id === report.conversationId)) {
+      openConversation(report.conversationId);
+      navigate('/chat', { state: { conversationId: report.conversationId } });
+      return;
+    }
+    navigate('/chat');
+  };
 
   const filtered = useMemo(() => {
     const list =
@@ -155,7 +169,7 @@ function ReportsPage({ onBack }) {
                       <TableCell sx={{ fontWeight: 700 }}>Prepared by</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>When</TableCell>
                       <TableCell sx={{ fontWeight: 700 }} align="right">
-                        Download
+                        Actions
                       </TableCell>
                     </TableRow>
                   </TableHead>
@@ -192,6 +206,15 @@ function ReportsPage({ onBack }) {
                           {formatWhen(report.createdAt)}
                         </TableCell>
                         <TableCell align="right">
+                          <Button
+                            size="small"
+                            startIcon={<ChatBubbleOutlineIcon />}
+                            onClick={() => openSourceChat(report)}
+                            sx={{ color: '#5B3FA0' }}
+                            disabled={!report.conversationId}
+                          >
+                            Chat
+                          </Button>
                           <Button
                             size="small"
                             startIcon={<DownloadIcon />}

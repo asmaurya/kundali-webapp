@@ -51,22 +51,27 @@ function displayNameFromEmail(email) {
     .join(' ');
 }
 
+export function isValidChart(chart) {
+  return Boolean(chart && chart.lagna && Array.isArray(chart.grahas));
+}
+
 export function getSelfProfile() {
   const birth = getBirthDetails();
   const chart = getChart();
   const session = getSession();
   const name = displayNameFromEmail(session?.email);
+  const ready = isValidChart(chart);
   return {
     id: SELF_ID,
     name,
     relation: 'Self',
     isSelf: true,
-    chartReady: Boolean(chart),
+    chartReady: ready,
     date: birth?.date || '',
     time: birth?.time || '',
     place: birth?.place || '',
     birth: birth || null,
-    chart: chart || null,
+    chart: ready ? chart : null,
   };
 }
 
@@ -80,6 +85,19 @@ export function getFamilyOnly(fallback = []) {
   );
 }
 
+/** Normalize chartReady from a stored member without recomputing. */
+export function withChartStatus(member) {
+  if (!member) return member;
+  if (member.isSelf || member.id === SELF_ID) return member;
+  const ready = isValidChart(member.chart);
+  return {
+    ...member,
+    isSelf: false,
+    chart: ready ? member.chart : null,
+    chartReady: ready,
+  };
+}
+
 /**
  * Persist demo family once when the family key is missing.
  * Does not overwrite an intentional empty list (`[]`).
@@ -87,18 +105,14 @@ export function getFamilyOnly(fallback = []) {
 export function ensureFamilySeeds() {
   const stored = loadFamilyMembers(null);
   if (Array.isArray(stored)) return getFamilyOnly();
-  const seeded = DEMO_FAMILY_MEMBERS.map((member) => ensureMemberChart(member));
+  const seeded = DEMO_FAMILY_MEMBERS.map((member) => ({ ...member, chartReady: false }));
   return persistFamilyMembers(seeded);
 }
 
 /** Self first, then family members (never duplicates Self). */
 export function listProfiles({ includePending = true } = {}) {
   const self = getSelfProfile();
-  const family = getFamilyOnly().map((member) => ({
-    ...member,
-    isSelf: false,
-    chartReady: Boolean(member.chart) || Boolean(member.chartReady),
-  }));
+  const family = getFamilyOnly().map(withChartStatus);
   const all = [self, ...family];
   if (includePending) return all;
   return all.filter((p) => p.chartReady && (p.chart || p.isSelf));
@@ -108,26 +122,30 @@ export function getProfileById(id) {
   return listProfiles().find((p) => String(p.id) === String(id)) || null;
 }
 
-export function ensureMemberChart(member) {
-  if (member?.chart) return { ...member, chartReady: true };
-  if (!member?.date || !member?.time || !member?.place) {
-    return { ...member, chartReady: false };
+export async function ensureMemberChart(member) {
+  const normalized = withChartStatus(member);
+  if (isValidChart(normalized?.chart)) {
+    return { ...normalized, chartReady: true };
+  }
+  if (!normalized?.date || !normalized?.time || !normalized?.place) {
+    return { ...normalized, chart: null, chartReady: false };
   }
   try {
-    const chart = createChart({
-      date: member.date,
-      time: member.time,
-      place: member.place,
-      lat: member.lat,
-      lon: member.lon,
-      tzOffsetHours: member.tzOffsetHours,
-      countryCode: member.countryCode,
-      placeId: member.placeId,
-      source: member.source,
+    const chart = await createChart({
+      date: normalized.date,
+      time: normalized.time,
+      place: normalized.place,
+      lat: normalized.lat,
+      lon: normalized.lon,
+      tzOffsetHours: normalized.tzOffsetHours,
+      countryCode: normalized.countryCode,
+      placeId: normalized.placeId,
+      source: normalized.source,
     });
-    return { ...member, chart, chartReady: true };
+    const ready = isValidChart(chart);
+    return { ...normalized, chart: ready ? chart : null, chartReady: ready };
   } catch {
-    return { ...member, chartReady: false };
+    return { ...normalized, chart: null, chartReady: false };
   }
 }
 
@@ -136,7 +154,12 @@ export function persistFamilyMembers(members) {
     .filter((m) => m && !m.isSelf && m.id !== SELF_ID && m.relation !== 'Self')
     .map((m) => {
       const { isSelf, ...rest } = m;
-      return rest;
+      const ready = isValidChart(rest.chart);
+      return {
+        ...rest,
+        chart: ready ? rest.chart : null,
+        chartReady: ready,
+      };
     });
   saveFamilyMembers(cleaned);
   return cleaned;

@@ -9,25 +9,39 @@ import {
 } from './betaSession';
 import { askOracle } from './api';
 import { scriptedReplyFor } from './scriptedReplies';
-import { chartContextForPrompt } from './lib/chartEngine';
-import { listProfiles } from './lib/profiles';
+import { buildLlmChartContext } from './lib/chartEngine';
+import { getSelfProfile, listProfiles } from './lib/profiles';
 import {
   markAstrologerUsed,
   maybeCaptureRemedyFromReply,
   maybeCaptureReportFromChat,
 } from './lib/libraryStore';
 
-function familyContextFromQuestion(question) {
+/** People map for anonymiser (names → relationship labels). */
+function peopleForAnonymize() {
+  const self = getSelfProfile();
+  const family = listProfiles()
+    .filter((p) => !p.isSelf)
+    .map((p) => ({ name: p.name, relation: p.relation }));
+  return { selfName: self?.name || '', family };
+}
+
+/** Family charts mentioned in the question (querent chart is always added separately). */
+function familyChartsFromQuestion(question) {
   const profiles = listProfiles().filter((p) => !p.isSelf && p.chart);
-  if (!profiles.length) return '';
-  const mentioned = profiles.filter((p) => {
-    const q = String(question || '').toLowerCase();
-    return q.includes(String(p.name).toLowerCase()) || q.includes(`@${String(p.name).toLowerCase()}`);
-  });
-  if (!mentioned.length) return '';
-  return mentioned
-    .map((p) => `\nFamily chart — ${p.name} (${p.relation}):\n${chartContextForPrompt(p.chart)}`)
-    .join('\n');
+  if (!profiles.length) return [];
+  const q = String(question || '').toLowerCase();
+  return profiles
+    .filter(
+      (p) =>
+        q.includes(String(p.name).toLowerCase()) || q.includes(`@${String(p.name).toLowerCase()}`)
+    )
+    .map((p) => ({
+      // Name kept briefly for anonymiser → relation label; chart JSON has no personal name field.
+      label: `${p.name} (${p.relation})`,
+      relation: p.relation,
+      chart: p.chart,
+    }));
 }
 
 export const ASTROLOGERS = {
@@ -53,6 +67,7 @@ export const ASTROLOGERS = {
     accent: '#2F6B52',
     tint: '#EDF4F0',
     speciality: 'Vedic astrology • Career • Remedies',
+    topics: ['career', 'remedies', 'timing'],
     oneLiner: 'Steady career and Saturn-period guidance with practical remedies.',
     description: '18 years of practice. Specialises in career direction, Saturn transits and remedial measures.',
     price: '₹499 / 30 min',
@@ -67,6 +82,7 @@ export const ASTROLOGERS = {
     accent: '#9A4A63',
     tint: '#FAEEF2',
     speciality: 'Vedic astrology • Relationships • Marriage',
+    topics: ['relationship', 'timing'],
     oneLiner: 'Marriage timing and family-chart readings with a gentle voice.',
     description: 'Specialises in compatibility, marriage timing and family consultations.',
     price: '₹399 / 30 min',
@@ -81,6 +97,7 @@ export const ASTROLOGERS = {
     accent: '#8A6A2F',
     tint: '#F9F3E6',
     speciality: 'Numerology • Health • Career',
+    topics: ['health', 'career', 'finance'],
     oneLiner: 'Health and life-path insights blending Vedic chart with numbers.',
     description: 'Works with numerology and health indications alongside classical Vedic charts.',
     price: '₹449 / 30 min',
@@ -103,6 +120,8 @@ const demoConversations = [
     astrologerId: 'astro-chat',
     title: 'Career transition guidance',
     updated: 'Just now',
+    executiveSummary:
+      'Querent feels stuck at work. Guidance: Saturn aspect on the 10th favours durable, gradual progress over abrupt moves; remedies or a live consult were offered as next steps.',
     messages: [
       { role: 'bot', text: GREETING },
       { role: 'user', text: 'I am feeling stuck in my career. Can you guide me?' },
@@ -236,10 +255,41 @@ function initialState() {
 
 const ChatContext = createContext(null);
 
+function isEmptyUserChat(conversation) {
+  if (!conversation) return false;
+  return !conversation.messages?.some((m) => m.role === 'user');
+}
+
+function buildLocalSummary(messages = []) {
+  const userTurns = messages.filter((m) => m.role === 'user').map((m) => m.text);
+  const botTurns = messages.filter((m) => m.role === 'bot').map((m) => m.text);
+  if (!userTurns.length) return 'No user messages in this chat yet.';
+  const topics = [];
+  [
+    [/career|job|work|promotion|business/i, 'career'],
+    [/marriage|relationship|partner|love|compatibility/i, 'relationships'],
+    [/health|sleep|stress|anxiety/i, 'health'],
+    [/remedy|remedies|donation|mantra|dasha/i, 'remedies / dasha'],
+  ].forEach(([re, label]) => {
+    if (userTurns.some((t) => re.test(t)) && !topics.includes(label)) topics.push(label);
+  });
+  return [
+    topics.length ? `Topics: ${topics.join(', ')}.` : null,
+    `Questions asked: ${userTurns.length}.`,
+    `Latest question: ${userTurns[userTurns.length - 1]}`,
+    botTurns.length ? `Latest guidance: ${botTurns[botTurns.length - 1].slice(0, 220)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export function ChatProvider({ children }) {
   const boot = initialState();
-  const [conversations, setConversations] = useState(boot.conversations);
+  const [conversations, setConversations] = useState(() =>
+    boot.conversations.filter((c) => !isEmptyUserChat(c) || c.id === boot.activeId)
+  );
   const [activeId, setActiveId] = useState(boot.activeId);
+  const [pendingUndo, setPendingUndo] = useState(null);
 
   useEffect(() => {
     saveConversations(conversations);
@@ -249,55 +299,123 @@ export function ChatProvider({ children }) {
     saveActiveId(activeId);
   }, [activeId]);
 
+  // Drop unused empty shells when leaving them.
+  useEffect(() => {
+    setConversations((current) => {
+      const pruned = current.filter((c) => c.id === activeId || !isEmptyUserChat(c));
+      return pruned.length === current.length ? current : pruned;
+    });
+  }, [activeId]);
+
   const value = useMemo(() => {
     const active = conversations.find((item) => item.id === activeId) || conversations[0];
 
     const openConversation = (id) => setActiveId(id);
 
-    const startChat = (astrologerId = 'astro-chat') => {
+    const startChat = (astrologerId = 'astro-chat', options = {}) => {
       const astrologer = ASTROLOGERS[astrologerId] || ASTROLOGERS['astro-chat'];
       markAstrologerUsed(astrologer.id);
       const id = nextId();
+      const greeting =
+        options.seedBotText ||
+        (astrologer.type === 'ai'
+          ? GREETING
+          : `Namaste, this is ${astrologer.name}. I have reviewed your chart. Ask your question and I will reply here; for a live session you can book 30 minutes from the panel above.`);
       const conversation = {
         id,
         astrologerId: astrologer.id,
-        title: 'New chat',
+        title: options.title || 'New chat',
         updated: 'Just now',
-        messages: [
-          {
-            role: 'bot',
-            text:
-              astrologer.type === 'ai'
-                ? GREETING
-                : `Namaste, this is ${astrologer.name}. I have reviewed your chart. Ask your question and I will reply here; for a live session you can book 30 minutes from the panel above.`,
-          },
-        ],
+        lockedPrefix: options.lockedPrefix || '',
+        handoffFromId: options.handoffFromId || null,
+        messages: options.messages || [{ role: 'bot', text: greeting }],
       };
-      setConversations((current) => [conversation, ...current]);
+      setConversations((current) => {
+        const pruned = current.filter((c) => !isEmptyUserChat(c));
+        return [conversation, ...pruned];
+      });
       setActiveId(id);
       return id;
     };
 
-    const sendMessage = async (text) => {
-      const trimmed = (text || '').trim();
-      if (!trimmed || !active) return;
+    const deleteConversation = (id) => {
+      const target = conversations.find((c) => c.id === id);
+      if (!target) return null;
+      const remaining = conversations.filter((c) => c.id !== id);
+      const nextActive =
+        id === activeId ? remaining[0]?.id || null : activeId;
+      setPendingUndo({ conversation: target, index: conversations.findIndex((c) => c.id === id) });
+      setConversations(remaining.length ? remaining : demoConversations);
+      setActiveId(nextActive || (remaining[0]?.id ?? 'c1'));
+      return target;
+    };
+
+    const undoDelete = () => {
+      if (!pendingUndo?.conversation) return false;
+      const { conversation, index } = pendingUndo;
+      setConversations((current) => {
+        const next = [...current];
+        next.splice(Math.min(index, next.length), 0, conversation);
+        return next;
+      });
+      setActiveId(conversation.id);
+      setPendingUndo(null);
+      return true;
+    };
+
+    const dismissUndo = () => setPendingUndo(null);
+
+    const renameConversation = (id, title) => {
+      setConversations((current) =>
+        current.map((c) => (c.id === id ? { ...c, title, updated: 'Just now' } : c))
+      );
+    };
+
+    const attachExecutiveSummary = (id, summary) => {
+      setConversations((current) =>
+        current.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                executiveSummary: summary,
+                summaryUpdatedAt: new Date().toISOString(),
+                updated: 'Just now',
+              }
+            : c
+        )
+      );
+    };
+
+    const clearLockedPrefix = (id) => {
+      setConversations((current) =>
+        current.map((c) => (c.id === id ? { ...c, lockedPrefix: '' } : c))
+      );
+    };
+
+    const sendMessage = async (text, { skipLockedPrefix } = {}) => {
+      if (!active) return;
+      const prefix = skipLockedPrefix ? '' : active.lockedPrefix || '';
+      const userPart = String(text || '').trim();
+      const trimmed = `${prefix}${userPart}`.trim();
+      if (!trimmed) return;
       const targetId = active.id;
       const astrologer = ASTROLOGERS[active.astrologerId] || ASTROLOGERS['astro-chat'];
       markAstrologerUsed(astrologer.id);
+      const priorMessages = active.messages;
+      const wasUntitled = active.title === 'New chat' || !priorMessages.some((m) => m.role === 'user');
 
       setConversations((current) =>
         current.map((conversation) => {
           if (conversation.id !== targetId) return conversation;
-          const isFirstUserMessage = !conversation.messages.some((m) => m.role === 'user');
           return {
             ...conversation,
-            title:
-              conversation.title === 'New chat' || isFirstUserMessage
-                ? trimmed.length > 42
-                  ? `${trimmed.slice(0, 42)}…`
-                  : trimmed
-                : conversation.title,
+            title: wasUntitled
+              ? userPart.length > 42
+                ? `${userPart.slice(0, 42)}…`
+                : userPart || conversation.title
+              : conversation.title,
             updated: 'Just now',
+            lockedPrefix: conversation.lockedPrefix || '',
             messages: [...conversation.messages, { role: 'user', text: trimmed }],
           };
         })
@@ -308,13 +426,17 @@ export function ChatProvider({ children }) {
         try {
           const locale = getSettings()?.locale === 'hi' ? 'hi' : 'en';
           const chart = getChart();
-          const extra = familyContextFromQuestion(trimmed);
+          const chartContext = buildLlmChartContext({
+            querentChart: chart,
+            familyCharts: familyChartsFromQuestion(trimmed),
+          });
           const result = await askOracle({
             question: trimmed,
             chart,
-            history: active.messages,
+            chartContext,
+            history: priorMessages,
             locale,
-            extraContext: extra,
+            people: peopleForAnonymize(),
           });
           replyText = result.text;
         } catch {
@@ -327,6 +449,7 @@ export function ChatProvider({ children }) {
         question: trimmed,
         reply: replyText,
         astrologer,
+        conversationId: targetId,
       });
 
       setConversations((current) =>
@@ -339,24 +462,88 @@ export function ChatProvider({ children }) {
           };
         })
       );
+
+      // LLM topic title after the first real user turn.
+      if (wasUntitled && astrologer.type === 'ai') {
+        try {
+          const { suggestChatTitle } = await import('./api');
+          const title = await suggestChatTitle({
+            question: trimmed,
+            reply: replyText,
+            history: priorMessages,
+          });
+          if (title) {
+            setConversations((current) =>
+              current.map((c) => (c.id === targetId ? { ...c, title, updated: 'Just now' } : c))
+            );
+          }
+        } catch {
+          /* keep provisional title */
+        }
+      }
+    };
+
+    const requestExecutiveSummary = async (id) => {
+      const conversation = conversations.find((c) => c.id === id) || active;
+      if (!conversation) return '';
+      const local = buildLocalSummary(conversation.messages);
+      try {
+        const { summarizeConversation } = await import('./api');
+        const summary = await summarizeConversation({
+          messages: conversation.messages,
+          chart: getChart(),
+        });
+        const text = summary || local;
+        attachExecutiveSummary(conversation.id, text);
+        return text;
+      } catch {
+        attachExecutiveSummary(conversation.id, local);
+        return local;
+      }
+    };
+
+    const handoffToHuman = async (astrologerId) => {
+      if (!active) return null;
+      const summary =
+        active.executiveSummary || buildLocalSummary(active.messages);
+      return startChat(astrologerId, {
+        title: `Handoff · ${active.title}`.slice(0, 48),
+        handoffFromId: active.id,
+        seedBotText: `Namaste. I have the summary of your Astro Chat so far:\n\n${summary}\n\nAsk what you would like me to focus on next.`,
+        messages: [
+          {
+            role: 'bot',
+            text: `Namaste. I have the summary of your Astro Chat so far:\n\n${summary}\n\nAsk what you would like me to focus on next.`,
+          },
+        ],
+      });
     };
 
     const resetToDemo = () => {
       setConversations(demoConversations);
       setActiveId('c1');
+      setPendingUndo(null);
     };
 
     return {
       conversations,
       active,
       activeId,
+      pendingUndo,
       openConversation,
       startChat,
       sendMessage,
+      deleteConversation,
+      undoDelete,
+      dismissUndo,
+      renameConversation,
+      requestExecutiveSummary,
+      handoffToHuman,
+      clearLockedPrefix,
       resetToDemo,
       byAstrologer: (astrologerId) => conversations.filter((c) => c.astrologerId === astrologerId),
     };
-  }, [conversations, activeId]);
+  }, [conversations, activeId, pendingUndo]);
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }

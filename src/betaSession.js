@@ -29,7 +29,14 @@ function readJson(key, fallback = null) {
 }
 
 function writeJson(key, value) {
-  window.localStorage.setItem(key, JSON.stringify(value));
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    // Safari private mode / quota — surface clearly rather than failing later.
+    throw new Error(
+      `Could not save locally (${error?.name || 'storage'}). Turn off Private Browsing or free some space, then try again.`
+    );
+  }
 }
 
 export function getSession() {

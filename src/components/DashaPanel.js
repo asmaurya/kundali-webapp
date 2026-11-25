@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
-import { Box, Chip, Typography } from '@mui/material';
+import { Box, Button, Chip, Typography } from '@mui/material';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import { useNavigate } from 'react-router-dom';
 import { buildDashaPanel } from '../lib/chartViews';
 
 function PeriodRow({ label, period }) {
@@ -27,11 +29,31 @@ function PeriodRow({ label, period }) {
 }
 
 function DashaPanel({ chart }) {
+  const navigate = useNavigate();
   const panel = useMemo(() => buildDashaPanel(chart), [chart]);
   if (!panel) return null;
 
   const { vimshottari, yogini } = panel;
   const cascade = vimshottari.cascade;
+  const dashaLabel = [
+    cascade?.maha?.lordName,
+    cascade?.antar?.lordName,
+    cascade?.pratyantar?.lordName,
+  ]
+    .filter(Boolean)
+    .join('–');
+
+  const chatAboutDasha = () => {
+    const prefix = `About my current dasha (${dashaLabel || chart?.summary?.currentDasha || 'current period'}): `;
+    navigate('/chat', {
+      state: {
+        astrologerId: 'astro-chat',
+        forceNew: true,
+        lockedPrefix: prefix,
+        title: 'Dasha reading',
+      },
+    });
+  };
 
   return (
     <Box className="panel" sx={{ mt: 2 }}>
@@ -94,6 +116,19 @@ function DashaPanel({ chart }) {
           </Box>
         </Box>
       )}
+
+      <Typography sx={{ mt: 2.5, fontSize: 13, color: '#4A4560' }}>
+        Not every dasha — and not every moment within one — means something adverse. Periods
+        describe tendencies; discuss with an astrologer to understand how they apply to your chart.
+      </Typography>
+      <Button
+        size="small"
+        startIcon={<ChatBubbleOutlineIcon />}
+        onClick={chatAboutDasha}
+        sx={{ mt: 1.25, color: '#5B3FA0', textTransform: 'none', pl: 0 }}
+      >
+        Chat now about this dasha
+      </Button>
     </Box>
   );
 }

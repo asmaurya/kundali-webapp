@@ -1,5 +1,12 @@
 import React, { useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
+import {
+  FLAG_LEGEND,
+  canonicalPlanetName,
+  enrichGrahas,
+  planetLabel,
+} from '../lib/grahaMeta';
+import PlanetGlyph, { GRAHA_ORDER, GRAHA_SANSKRIT, PlanetGlyphMark } from './PlanetGlyph';
 
 /** Classic North Indian diamond layout (viewBox 0 0 300 300). Houses are fixed; lagna sits in house 1. */
 export const HOUSE_POLYGONS = {
@@ -69,44 +76,35 @@ export const HOUSE_POLYGONS = {
   ],
 };
 
-const PLANET_SHORT = {
+const SIGN_SHORT = {
   en: {
-    Sun: 'Su',
-    Moon: 'Mo',
-    Mars: 'Ma',
-    Mercury: 'Me',
-    Jupiter: 'Ju',
-    Venus: 'Ve',
-    Saturn: 'Sa',
-    Rahu: 'Ra',
-    Ketu: 'Ke',
+    Aries: 'Ar',
+    Taurus: 'Ta',
+    Gemini: 'Ge',
+    Cancer: 'Cn',
+    Leo: 'Le',
+    Virgo: 'Vi',
+    Libra: 'Li',
+    Scorpio: 'Sc',
+    Sagittarius: 'Sg',
+    Capricorn: 'Cp',
+    Aquarius: 'Aq',
+    Pisces: 'Pi',
   },
   hi: {
-    Sun: 'सू',
-    Moon: 'चं',
-    Mars: 'मं',
-    Mercury: 'बु',
-    Jupiter: 'गु',
-    Venus: 'शु',
-    Saturn: 'शनि',
-    Rahu: 'रा',
-    Ketu: 'के',
+    Aries: 'मेष',
+    Taurus: 'वृष',
+    Gemini: 'मिथु',
+    Cancer: 'कर्क',
+    Leo: 'सिंह',
+    Virgo: 'कन्या',
+    Libra: 'तुला',
+    Scorpio: 'वृश्च',
+    Sagittarius: 'धनु',
+    Capricorn: 'मकर',
+    Aquarius: 'कुंभ',
+    Pisces: 'मीन',
   },
-};
-
-const SIGN_SHORT = {
-  Aries: 'Ar',
-  Taurus: 'Ta',
-  Gemini: 'Ge',
-  Cancer: 'Cn',
-  Leo: 'Le',
-  Virgo: 'Vi',
-  Libra: 'Li',
-  Scorpio: 'Sc',
-  Sagittarius: 'Sg',
-  Capricorn: 'Cp',
-  Aquarius: 'Aq',
-  Pisces: 'Pi',
 };
 
 function centroid(points) {
@@ -124,11 +122,12 @@ function pointsAttr(points) {
 /**
  * @param {{
  *   houses: Array<{house:number,sign:string,planets:string[]}>,
- *   grahas?: Array<{name:string,rashiName?:string}>,
+ *   grahas?: Array<object>,
  *   lagnaRashi?: number,
  *   lang?: 'en'|'hi',
  *   labelMode?: 'planet'|'sign',
  *   ariaLabel?: string,
+ *   showLegend?: boolean,
  * }} props
  */
 function NorthIndianChart({
@@ -138,20 +137,31 @@ function NorthIndianChart({
   lang = 'en',
   labelMode = 'planet',
   ariaLabel,
+  showLegend = true,
 }) {
-  const short = PLANET_SHORT[lang] || PLANET_SHORT.en;
   const label =
     ariaLabel || (lang === 'hi' ? 'उत्तर भारतीय कुंडली' : 'North Indian natal chart');
+  const signShort = SIGN_SHORT[lang] || SIGN_SHORT.en;
+
+  const enriched = useMemo(() => enrichGrahas(grahas || []), [grahas]);
 
   const grahaByName = useMemo(() => {
     const map = {};
-    (grahas || []).forEach((g) => {
-      map[g.name] = g;
+    enriched.forEach((g) => {
+      const key = canonicalPlanetName(g.name || g.id);
+      if (key) map[key] = g;
+      if (g.name) map[g.name] = g;
     });
     return map;
-  }, [grahas]);
+  }, [enriched]);
 
   const cells = useMemo(() => {
+    const planetsFromGrahas = (house) =>
+      enriched
+        .filter((g) => Number(g.house) === house)
+        .map((g) => canonicalPlanetName(g.name || g.id))
+        .filter(Boolean);
+
     return Array.from({ length: 12 }, (_, index) => {
       const house = index + 1;
       const row = houses.find((item) => item.house === house) || {
@@ -159,91 +169,217 @@ function NorthIndianChart({
         sign: '',
         planets: [],
       };
+      let planets = (row.planets || [])
+        .map((entry) => canonicalPlanetName(entry))
+        .filter(Boolean);
+      // If house rows lack names (older saves / partial API payloads), rebuild from grahas.
+      if (!planets.length && enriched.length) {
+        planets = planetsFromGrahas(house);
+      }
       const rashiNumber = ((lagnaRashi - 1 + house - 1) % 12) + 1;
       const poly = HOUSE_POLYGONS[house];
       const center = centroid(poly);
-      return { house, row, rashiNumber, poly, center };
+      return {
+        house,
+        row: { ...row, planets },
+        rashiNumber,
+        poly,
+        center,
+      };
     });
-  }, [houses, lagnaRashi]);
+  }, [houses, lagnaRashi, enriched]);
 
-  const formatPlanet = (name, houseSign) => {
-    const graha = grahaByName[name];
+  const formatSignLabel = (name, houseSign) => {
+    const key = canonicalPlanetName(name);
+    const graha = grahaByName[key] || grahaByName[name];
     const signName = graha?.rashiName || houseSign || '';
-    if (labelMode === 'sign') {
-      return SIGN_SHORT[signName] || signName.slice(0, 2) || short[name] || name.slice(0, 2);
-    }
-    return short[name] || name.slice(0, 2);
+    const marks = graha?.marks || '';
+    const abbr = signShort[signName] || signName.slice(0, 2) || '?';
+    return `${abbr}${marks}`;
   };
 
   const hoverTitle = (name, houseSign) => {
-    const graha = grahaByName[name];
+    const key = canonicalPlanetName(name);
+    const graha = grahaByName[key] || grahaByName[name];
+    const display = planetLabel(key || name, lang);
     const signName = graha?.rashiName || houseSign || '';
-    return signName ? `${name} · ${signName}` : name;
+    const bits = [display];
+    if (signName) bits.push(signName);
+    if (graha?.degree != null) bits.push(`${graha.degree}°`);
+    if (graha?.uchcha) bits.push(lang === 'hi' ? 'उच्च' : 'Uchch');
+    if (graha?.neecha) bits.push(lang === 'hi' ? 'नीच' : 'Neech');
+    if (graha?.vakri) bits.push(lang === 'hi' ? 'वक्री' : 'Vakri');
+    if (graha?.ast) bits.push(lang === 'hi' ? 'अस्त' : 'Ast');
+    if (graha?.vargottam) bits.push(lang === 'hi' ? 'वर्गोत्तम' : 'Vargottam');
+    return bits.join(' · ');
   };
 
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: 420,
-        aspectRatio: '1 / 1',
-        bgcolor: '#FDFBFF',
-        border: '2px solid #3B3050',
-        borderRadius: 2,
-        overflow: 'hidden',
-      }}
-      aria-label={label}
-    >
-      <svg viewBox="0 0 300 300" width="100%" height="100%" role="img">
-        <rect x="0" y="0" width="300" height="300" fill="#FDFBFF" />
-        {cells.map(({ house, row, rashiNumber, poly, center }) => (
-          <g key={house}>
-            <polygon
-              points={pointsAttr(poly)}
-              fill={house === 1 ? '#F3EEFA' : '#FDFBFF'}
-              stroke="#3B3050"
-              strokeWidth="1.25"
-            />
-            <text
-              x={center.x}
-              y={center.y - (row.planets.length ? 10 : 0)}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="#6A6580"
-              fontSize="11"
-              fontFamily="inherit"
-            >
-              {rashiNumber}
-            </text>
-            {row.planets.map((name, index) => {
-              const count = row.planets.length;
-              const offset = (index - (count - 1) / 2) * 14;
-              return (
-                <text
-                  key={`${house}-${name}`}
-                  x={center.x + offset}
-                  y={center.y + 12}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fill="#5B3FA0"
-                  fontSize="11"
-                  fontWeight="700"
-                  fontFamily="inherit"
-                  style={{ cursor: 'default' }}
-                >
-                  <title>{hoverTitle(name, row.sign)}</title>
-                  {formatPlanet(name, row.sign)}
-                </text>
-              );
-            })}
-          </g>
-        ))}
-      </svg>
-      <Typography sx={{ px: 1.5, pb: 1, fontSize: 11, color: '#6A6580', textAlign: 'center' }}>
-        {labelMode === 'sign'
-          ? 'House 1 = Lagna · numbers are rashis · glyphs show planet signs · hover for name'
-          : 'House 1 = Lagna · numbers are rashis · planet abbrev · hover for full name + sign'}
-      </Typography>
+    <Box>
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: 420,
+          aspectRatio: '1 / 1',
+          bgcolor: '#FDFBFF',
+          border: '2px solid #3B3050',
+          borderRadius: 2,
+          overflow: 'visible',
+        }}
+        aria-label={label}
+      >
+        <svg viewBox="0 0 300 300" width="100%" height="100%" role="img">
+          <rect x="0" y="0" width="300" height="300" fill="#FDFBFF" />
+          {cells.map(({ house, row, rashiNumber, poly, center }) => (
+            <g key={house}>
+              <polygon
+                points={pointsAttr(poly)}
+                fill={house === 1 ? '#F3EEFA' : '#FDFBFF'}
+                stroke="#3B3050"
+                strokeWidth="1.25"
+              />
+              <text
+                x={center.x}
+                y={center.y - (row.planets.length ? 14 : 0)}
+                dy="0.35em"
+                textAnchor="middle"
+                fill="#6A6580"
+                fontSize="10"
+                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+              >
+                {rashiNumber}
+              </text>
+              {row.planets.map((name, index) => {
+                const count = row.planets.length;
+                // Extra spacing: stack when crowded, otherwise spread horizontally.
+                const stack = count > 2;
+                const x = stack
+                  ? center.x
+                  : center.x + (index - (count - 1) / 2) * 34;
+                const y = stack
+                  ? center.y + 4 + index * 15
+                  : center.y + 16;
+                const planetKey = canonicalPlanetName(name);
+                const graha = grahaByName[planetKey] || grahaByName[name];
+                const marks = graha?.marks || '';
+                const short = planetLabel(planetKey || name, lang, { short: true });
+                if (labelMode === 'sign') {
+                  return (
+                    <text
+                      key={`${house}-${planetKey || name}-${index}`}
+                      x={x}
+                      y={y}
+                      dy="0.35em"
+                      textAnchor="middle"
+                      fill="#5B3FA0"
+                      fontSize="11"
+                      fontWeight="700"
+                      fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+                      style={{ cursor: 'default' }}
+                    >
+                      <title>{hoverTitle(planetKey || name, row.sign)}</title>
+                      {formatSignLabel(planetKey || name, row.sign)}
+                    </text>
+                  );
+                }
+                return (
+                  <g
+                    key={`${house}-${planetKey || name}-${index}`}
+                    transform={`translate(${x - 16}, ${y - 7})`}
+                    style={{ cursor: 'default' }}
+                  >
+                    <title>{hoverTitle(planetKey || name, row.sign)}</title>
+                    <PlanetGlyphMark planet={planetKey || name} size={13} />
+                    <text
+                      x="15"
+                      y="10"
+                      fill="#5B3FA0"
+                      fontSize="10"
+                      fontWeight="700"
+                      fontFamily="system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+                    >
+                      {short}
+                      {marks}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          ))}
+        </svg>
+      </Box>
+
+      {showLegend && (
+        <Box sx={{ mt: 1.25, maxWidth: 420 }}>
+          <Typography sx={{ fontSize: 11, color: '#6A6580', mb: 0.75, textAlign: 'center' }}>
+            {lang === 'hi'
+              ? 'भाव 1 = लग्न · अंक = राशि · हिन्दू ग्रह चिह्न + नाम'
+              : 'House 1 = Lagna · numbers = rashis · Hindu graha glyph + name'}
+          </Typography>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 0.75,
+              mb: 1.25,
+              px: 0.5,
+            }}
+            aria-label={lang === 'hi' ? 'ग्रह चिह्न' : 'Planet symbols'}
+          >
+            {GRAHA_ORDER.map((planet) => (
+              <Box
+                key={planet}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.75,
+                  color: '#1E1B2E',
+                  minWidth: 0,
+                }}
+              >
+                <PlanetGlyph planet={planet} size={18} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 11, fontWeight: 700, lineHeight: 1.15 }}>
+                    {GRAHA_SANSKRIT[planet]}
+                  </Typography>
+                  <Typography sx={{ fontSize: 10, color: '#6A6580', lineHeight: 1.15 }}>
+                    {planetLabel(planet, lang, { short: true })}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1,
+              justifyContent: 'center',
+              px: 0.5,
+            }}
+            aria-label={lang === 'hi' ? 'कुंडली संकेत' : 'Chart legend'}
+          >
+            {FLAG_LEGEND.map((item) => (
+              <Typography
+                key={item.key}
+                component="span"
+                sx={{
+                  fontSize: 11,
+                  color: '#3A3550',
+                  bgcolor: '#F7F4FB',
+                  border: '1px solid #E6DEEF',
+                  borderRadius: 1,
+                  px: 0.75,
+                  py: 0.25,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <strong>{item.mark}</strong> {lang === 'hi' ? item.hi : item.en}
+              </Typography>
+            ))}
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }

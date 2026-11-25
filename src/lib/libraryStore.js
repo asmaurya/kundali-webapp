@@ -4,8 +4,15 @@ const KEYS = {
   reports: 'kundali.beta.reports',
   remedies: 'kundali.beta.remedies',
   ratings: 'kundali.beta.astrologerRatings',
+  tags: 'kundali.beta.astrologerTags',
   lastUsed: 'kundali.beta.astrologerLastUsed',
 };
+
+const TAG_OPTIONS = ['career', 'relationship', 'health', 'remedies', 'finance', 'timing'];
+
+export function astrologerTagOptions() {
+  return TAG_OPTIONS;
+}
 
 function read(key, fallback) {
   try {
@@ -43,6 +50,7 @@ export function addReport(report) {
       source: report.source || 'chat',
       generatedBy: report.generatedBy || 'Astro Chat',
       generatedByType: report.generatedByType || 'ai',
+      conversationId: report.conversationId || null,
     },
     ...loadReports(),
   ].slice(0, 80);
@@ -80,12 +88,49 @@ export function loadAstrologerRatings() {
 
 export function setAstrologerRating(astrologerId, rating) {
   const all = loadAstrologerRatings();
+  const score = Math.max(1, Math.min(5, Number(rating) || 0));
+  const prev = all[astrologerId] || {};
+  // Seed a small public sample once so the card can show an overall average in beta.
+  const sample = Array.isArray(prev.sample) && prev.sample.length
+    ? prev.sample
+    : [4, 5, 4, 3, 5].map((n) => n + ((String(astrologerId).charCodeAt(0) || 0) % 2));
+  const nextSample = [...sample.slice(0, 12), score].slice(-16);
+  const average =
+    nextSample.reduce((sum, n) => sum + Number(n || 0), 0) / Math.max(1, nextSample.length);
   all[astrologerId] = {
-    rating: Math.max(1, Math.min(5, Number(rating) || 0)),
+    rating: score,
+    sample: nextSample,
+    average: Math.round(average * 10) / 10,
     updatedAt: new Date().toISOString(),
   };
   write(KEYS.ratings, all);
   return all[astrologerId];
+}
+
+export function getAstrologerAverage(astrologerId) {
+  const entry = loadAstrologerRatings()[astrologerId];
+  if (entry?.average) return entry.average;
+  if (entry?.rating) return entry.rating;
+  // Stable demo average before the user rates.
+  const base = 3.8 + (((String(astrologerId).charCodeAt(0) || 0) % 10) / 10);
+  return Math.round(base * 10) / 10;
+}
+
+export function loadAstrologerTags() {
+  return read(KEYS.tags, {});
+}
+
+export function setAstrologerTags(astrologerId, tags) {
+  const all = loadAstrologerTags();
+  all[astrologerId] = (tags || []).filter((t) => TAG_OPTIONS.includes(t));
+  write(KEYS.tags, all);
+  return all[astrologerId];
+}
+
+export function toggleAstrologerTag(astrologerId, tag) {
+  const current = loadAstrologerTags()[astrologerId] || [];
+  const next = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
+  return setAstrologerTags(astrologerId, next);
 }
 
 export function loadAstrologerLastUsed() {
@@ -118,6 +163,7 @@ export function ensureLibrarySeeds({ memberName = 'You' } = {}) {
         source: 'ai',
         generatedBy: 'Astro Chat',
         generatedByType: 'ai',
+        conversationId: 'c1',
       },
       {
         id: 'seed-marriage',
@@ -130,6 +176,7 @@ export function ensureLibrarySeeds({ memberName = 'You' } = {}) {
         source: 'human',
         generatedBy: 'Acharya Meera Verma',
         generatedByType: 'live',
+        conversationId: 'c6',
       },
       ...chatOnly,
     ]);
@@ -167,7 +214,7 @@ export function maybeCaptureRemedyFromReply({ text, astrologer, memberName }) {
   });
 }
 
-export function maybeCaptureReportFromChat({ question, reply, memberName, astrologer }) {
+export function maybeCaptureReportFromChat({ question, reply, memberName, astrologer, conversationId }) {
   if (!question || !reply) return null;
   if (!/report|career|marriage|health|finance|compatibility|timing/i.test(question)) {
     return null;
@@ -181,5 +228,6 @@ export function maybeCaptureReportFromChat({ question, reply, memberName, astrol
     source: isHuman ? 'human' : 'ai',
     generatedBy: astrologer?.name || 'Astro Chat',
     generatedByType: isHuman ? 'live' : 'ai',
+    conversationId: conversationId || null,
   });
 }

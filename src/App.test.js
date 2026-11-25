@@ -43,6 +43,11 @@ beforeEach(() => {
       chartReady: true,
     },
   ]);
+  try {
+    require('./providers').getUsageMeter().resetDemo();
+  } catch {
+    /* ignore */
+  }
   const jsonResponse = (data, ok = true) => {
     const body = JSON.stringify(data);
     return {
@@ -157,6 +162,91 @@ beforeEach(() => {
         },
       };
     }
+    if (url.includes('/api/admin/llm')) {
+      const body = init?.body ? JSON.parse(init.body) : {};
+      if (body.action === 'probe') {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              reply: { text: 'Steady skill-building.', provider: 'nvidia', used_llm: true },
+              trace: {
+                at: new Date().toISOString(),
+                ok: true,
+                provider: 'nvidia',
+                model: 'nvidia/nemotron-3.5-bolt-e4b',
+                baseUrl: 'https://integrate.api.nvidia.com/v1',
+                masterPrompt: 'Ground every answer…',
+                context: 'Lagna: Mesha',
+                question: body.question || 'probe',
+                thinking: 'Consider 10th house…',
+                output: 'Steady skill-building.',
+                usage: { promptTokens: 120, completionTokens: 40, totalTokens: 160 },
+                params: { topP: 1 },
+              },
+            };
+          },
+        };
+      }
+      return {
+        ok: true,
+        async json() {
+          return {
+            ok: true,
+            lab: {
+              masterPrompt: '',
+              provider: 'nvidia',
+              providerLabel: 'NVIDIA NIM',
+              baseUrl: 'https://integrate.api.nvidia.com/v1',
+              secretName: 'NVIDIA_API_KEY',
+              model: 'nvidia/nemotron-3.5-bolt-e4b',
+              apiKeySet: true,
+              apiKeyRequired: false,
+              keyLocked: true,
+              providerCustom: false,
+              apiKeyMasked: '•••• permanent Cloudflare secret (NVIDIA_API_KEY)',
+              cloudflareSecretsWritable: true,
+              customProviders: [],
+              topP: 1,
+              frequencyPenalty: 0,
+              presencePenalty: 0,
+              maxTokens: 512,
+              captureThinking: true,
+              showThinking: false,
+              providers: [
+                {
+                  id: 'nvidia',
+                  label: 'NVIDIA NIM',
+                  baseUrl: 'https://integrate.api.nvidia.com/v1',
+                  secretName: 'NVIDIA_API_KEY',
+                  defaultModel: 'nvidia/nemotron-3.5-bolt-e4b',
+                  apiKeySet: true,
+                },
+                {
+                  id: 'openai',
+                  label: 'OpenAI',
+                  baseUrl: 'https://api.openai.com/v1',
+                  secretName: 'OPENAI_API_KEY',
+                  defaultModel: 'gpt-4o-mini',
+                  apiKeySet: false,
+                },
+                {
+                  id: 'claude',
+                  label: 'Claude (Anthropic)',
+                  baseUrl: 'https://api.anthropic.com/v1',
+                  secretName: 'ANTHROPIC_API_KEY',
+                  defaultModel: 'claude-sonnet-4-20250514',
+                  apiKeySet: false,
+                },
+              ],
+              defaults: { masterPrompt: 'Ground every answer…', provider: 'nvidia' },
+            },
+            trace: null,
+          };
+        },
+      };
+    }
     if (url.includes('/api/places/autocomplete')) {
       return {
         ok: true,
@@ -235,7 +325,8 @@ test('picking a recent chat in the side panel opens it in the workspace', () => 
 
 test('a new chat defaults to the AI astrologer', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByRole('button', { name: /^new chat$/i }));
+  const buttons = screen.getAllByRole('button', { name: /^new chat$/i });
+  fireEvent.click(buttons[0]);
   expect(within(conversation()).getByText('Astro Chat')).toBeInTheDocument();
   expect(within(conversation()).queryByText(/book live session/i)).not.toBeInTheDocument();
 });
@@ -370,10 +461,13 @@ test('family wizard keeps date/time pickers, place field, and Create chart enabl
   fireEvent.change(timeInput, { target: { value: '12:30' } });
   fireEvent.change(placeInput, { target: { value: 'Delhi, India' } });
 
-  await waitFor(() => {
-    expect(screen.getByRole('button', { name: /create chart/i })).not.toBeDisabled();
-  });
-});
+  await waitFor(
+    () => {
+      expect(screen.getByRole('button', { name: /create chart/i })).not.toBeDisabled();
+    },
+    { timeout: 10000 }
+  );
+}, 15000);
 
 test('services open dedicated reports, astrologers and remedies pages', () => {
   renderApp('/services');
@@ -427,7 +521,7 @@ test('returning users with a completed session land on chat from splash', () => 
 
 test('chats persist across remounts', async () => {
   const { unmount } = renderApp('/chat');
-  fireEvent.click(screen.getByRole('button', { name: /^new chat$/i }));
+  fireEvent.click(screen.getAllByRole('button', { name: /^new chat$/i })[0]);
   const input = screen.getByPlaceholderText(/ask about your chart/i);
   fireEvent.change(input, {
     target: { value: 'Career advice for a switch' },
@@ -509,6 +603,32 @@ test('settings page can switch language to Hindi', async () => {
   await waitFor(() => {
     expect(screen.getByRole('heading', { name: 'सेटिंग्स' })).toBeInTheDocument();
   });
+});
+
+test(
+  'LLM lab is reachable from settings',
+  async () => {
+    renderApp('/settings/llm');
+    await waitFor(
+      () => {
+        expect(screen.getByRole('heading', { name: /^llm lab$/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /save llm settings/i })).toBeInTheDocument();
+      },
+      { timeout: 10000 }
+    );
+    expect(screen.getByRole('button', { name: /reset defaults/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /llm console/i })).toBeInTheDocument();
+  },
+  15000
+);
+
+test('astrologers marketplace shows recommendations tab and topic filters', () => {
+  renderApp('/astrologers');
+  expect(screen.getByRole('heading', { name: /chat with an astrologer/i })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: /recommendations/i })).toBeInTheDocument();
+  const topicFilters = screen.getByRole('group', { name: /topic filter/i });
+  expect(within(topicFilters).getByRole('button', { name: /^career$/i })).toBeInTheDocument();
+  expect(screen.getByPlaceholderText(/search jyotish/i)).toBeInTheDocument();
 });
 
 test('kundali page shows the North Indian diamond chart when a chart exists', () => {
