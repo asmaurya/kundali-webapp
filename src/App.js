@@ -84,9 +84,10 @@ function AppShell() {
   const navItems = useMemo(
     () => [
       { label: t('navChat'), path: '/', icon: 'chat' },
+      // Keep Memory near the top of Menu so it is not missed below Family/Services.
+      { label: t('navMemory'), path: '/memory', icon: 'memory' },
       { label: t('navKundali'), path: '/kundali', icon: 'kundali' },
       { label: t('navFamily'), path: '/family', icon: 'family' },
-      { label: t('navMemory'), path: '/memory', icon: 'memory' },
       { label: t('navServices'), path: '/services', icon: 'services' },
       { label: t('navSubscription'), path: '/subscription', icon: 'subscription' },
       { label: t('navSupport'), path: '/support', icon: 'support' },

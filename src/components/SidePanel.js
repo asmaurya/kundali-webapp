@@ -15,6 +15,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import { ASTROLOGERS, useChat } from '../chatStore';
 import { useLocale } from '../i18n/LocaleContext';
+import { countActiveMemory } from '../lib/memoryStore';
 
 const ICONS = {
   chat: ChatIcon,
@@ -64,6 +65,7 @@ function SidePanel({
 
   const recent = conversations.slice(0, 3);
   const astrologerList = Object.values(ASTROLOGERS);
+  const memoryCount = countActiveMemory('self');
 
   if (!expanded) {
     if (!isDesktop) return null;
@@ -221,21 +223,49 @@ function SidePanel({
           </button>
         ))}
 
+        <Box className="side-panel__section">{t('navMemory')}</Box>
+        <button
+          type="button"
+          className={`side-panel__memory${isActive('/memory') ? ' side-panel__memory--active' : ''}`}
+          onClick={() => onNavigate('/memory')}
+          aria-label={t('navMemory')}
+          aria-current={isActive('/memory') ? 'page' : undefined}
+        >
+          <span className="side-panel__memory-icon" aria-hidden="true">
+            <AutoAwesomeIcon fontSize="small" />
+          </span>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Box className="side-panel__chat-title">{t('navMemory')}</Box>
+            <Box className="side-panel__chat-meta">
+              {memoryCount > 0
+                ? `${memoryCount} remembered detail${memoryCount === 1 ? '' : 's'}`
+                : 'Saved details for readings'}
+            </Box>
+          </Box>
+        </button>
+
         <Box className="side-panel__section">{t('menu')}</Box>
         {items.map((item) => {
-          const Icon = ICONS[item.icon];
+          const Icon = ICONS[item.icon] || AutoAwesomeIcon;
+          const memoryItem = item.path === '/memory';
           return (
             <button
               type="button"
               key={item.path}
-              className={`side-panel__item${isActive(item.path) ? ' side-panel__item--active' : ''}`}
+              className={`side-panel__item${isActive(item.path) ? ' side-panel__item--active' : ''}${
+                memoryItem ? ' side-panel__item--memory' : ''
+              }`}
               onClick={() => onNavigate(item.path)}
+              aria-label={item.label}
               aria-current={isActive(item.path) ? 'page' : undefined}
             >
               <span className="side-panel__icon">
                 <Icon fontSize="small" />
               </span>
               {item.label}
+              {memoryItem && memoryCount > 0 ? (
+                <span className="side-panel__memory-count">{memoryCount}</span>
+              ) : null}
             </button>
           );
         })}
