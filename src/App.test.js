@@ -344,7 +344,7 @@ test('family page can start adding a member with a relation', () => {
   expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
 });
 
-test('family wizard enables Create chart after date, time and place', async () => {
+test('family wizard keeps date/time pickers, place field, and Create chart enable', async () => {
   renderApp('/family');
   fireEvent.click(screen.getByRole('button', { name: /add family member/i }));
   fireEvent.change(screen.getByLabelText(/full name/i), {
@@ -352,17 +352,23 @@ test('family wizard enables Create chart after date, time and place', async () =
   });
   fireEvent.click(screen.getByRole('button', { name: /^continue$/i }));
 
+  const dateInput = screen.getByLabelText(/^date of birth$/i);
+  const timeInput = screen.getByLabelText(/^time of birth$/i);
+  const placeInput = screen.getByLabelText(/place of birth/i);
+  expect(dateInput).toHaveAttribute('type', 'date');
+  expect(timeInput).toHaveAttribute('type', 'time');
+  // Leading icons still present (calendar + clock + place).
+  expect(screen.getByTestId('CalendarMonthIcon')).toBeInTheDocument();
+  expect(screen.getByTestId('ScheduleIcon')).toBeInTheDocument();
+  expect(screen.getByTestId('PlaceIcon')).toBeInTheDocument();
+  // Placeholder visible under a shrunk label (no overlap of unshrunk label).
+  expect(placeInput.getAttribute('placeholder') || '').toMatch(/start typing a city/i);
+
   expect(screen.getByRole('button', { name: /create chart/i })).toBeDisabled();
 
-  fireEvent.change(screen.getByLabelText(/^date of birth$/i), {
-    target: { value: '2026-11-25' },
-  });
-  fireEvent.change(screen.getByLabelText(/^time of birth$/i), {
-    target: { value: '12:30' },
-  });
-  fireEvent.change(screen.getByLabelText(/place of birth/i), {
-    target: { value: 'Delhi, India' },
-  });
+  fireEvent.change(dateInput, { target: { value: '2026-11-25' } });
+  fireEvent.change(timeInput, { target: { value: '12:30' } });
+  fireEvent.change(placeInput, { target: { value: 'Delhi, India' } });
 
   await waitFor(() => {
     expect(screen.getByRole('button', { name: /create chart/i })).not.toBeDisabled();

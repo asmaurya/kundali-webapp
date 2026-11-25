@@ -13,20 +13,7 @@ import {
 import PlaceIcon from '@mui/icons-material/Place';
 import { getSession } from '../betaSession';
 import { placesAutocomplete, placesDetails } from '../api';
-
-const fieldSx = {
-  '& .MuiOutlinedInput-root': {
-    bgcolor: '#FDFBFF',
-    borderRadius: 2.5,
-  },
-  '& .MuiInputLabel-root': {
-    backgroundColor: '#FCF8F3',
-    px: 0.5,
-  },
-  '& .MuiInputLabel-shrink': {
-    transform: 'translate(14px, -9px) scale(0.75)',
-  },
-};
+import { birthFieldSx } from './birthFieldSx';
 
 function PlaceOfBirthField({
   label,
@@ -137,7 +124,9 @@ function PlaceOfBirthField({
         fullWidth
         autoComplete="off"
         slotProps={{
-          inputLabel: { shrink: Boolean(query) },
+          // Always shrink when a placeholder is shown so the label never
+          // sits on top of "Start typing a city…" / the typed value.
+          inputLabel: { shrink: true },
           input: {
             startAdornment: (
               <InputAdornment position="start">
@@ -150,8 +139,9 @@ function PlaceOfBirthField({
               </InputAdornment>
             ) : null,
           },
+          htmlInput: label ? { 'aria-label': label } : undefined,
         }}
-        sx={fieldSx}
+        sx={birthFieldSx}
       />
       {hint && (
         <Typography sx={{ mt: 0.75, fontSize: 13, color: '#6A6580' }}>{hint}</Typography>
