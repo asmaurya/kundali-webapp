@@ -15,12 +15,14 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import { ASTROLOGERS, useChat } from '../chatStore';
 import { useLocale } from '../i18n/LocaleContext';
+import { countActiveMemory } from '../lib/memoryStore';
 
 const ICONS = {
   chat: ChatIcon,
   services: BuildIcon,
   family: GroupsIcon,
   kundali: AccountBalanceIcon,
+  memory: AutoAwesomeIcon,
   subscription: SubscriptionsIcon,
   support: SupportAgentIcon,
   settings: SettingsIcon,
@@ -63,6 +65,7 @@ function SidePanel({
 
   const recent = conversations.slice(0, 3);
   const astrologerList = Object.values(ASTROLOGERS);
+  const memoryCount = countActiveMemory('self');
 
   if (!expanded) {
     if (!isDesktop) return null;
@@ -167,49 +170,26 @@ function SidePanel({
         <Box className="side-panel__section">{t('recentChats')}</Box>
         {recent.map((conversation) => {
           const astrologer = ASTROLOGERS[conversation.astrologerId];
-          const offline = astrologer?.type === 'live' && !astrologer.online;
           return (
-            <Tooltip
+            <button
+              type="button"
               key={conversation.id}
-              title={
-                conversation.executiveSummary
-                  ? `Summary: ${conversation.executiveSummary}`
-                  : offline
-                    ? `${astrologer.name} is offline`
-                    : conversation.title
-              }
-              placement="right"
-              enterDelay={400}
-              describeChild
+              className="side-panel__chat"
+              onClick={() => openChat(conversation.id)}
             >
-              <button
-                type="button"
-                className="side-panel__chat"
-                onClick={() => openChat(conversation.id)}
-                aria-label={conversation.title}
+              <Box
+                className="side-panel__chat-avatar"
+                style={{ backgroundColor: astrologer.tint, color: astrologer.accent, borderColor: `${astrologer.accent}33` }}
               >
-                <Box
-                  className="side-panel__chat-avatar"
-                  style={{ backgroundColor: astrologer.tint, color: astrologer.accent, borderColor: `${astrologer.accent}33` }}
-                >
-                  {astrologer.initials}
+                {astrologer.initials}
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Box className="side-panel__chat-title">{conversation.title}</Box>
+                <Box className="side-panel__chat-meta">
+                  {astrologer.name} · {conversation.updated}
                 </Box>
-                <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Box className="side-panel__chat-title">{conversation.title}</Box>
-                  <Box className="side-panel__chat-meta">
-                    {astrologer.name}
-                    {offline ? ' · Offline' : ''} · {conversation.updated}
-                  </Box>
-                </Box>
-                {astrologer?.type === 'live' && (
-                  <Box
-                    component="span"
-                    className={`presence-dot${astrologer.online ? ' presence-dot--online' : ''}`}
-                    title={astrologer.online ? 'Online' : 'Offline'}
-                  />
-                )}
-              </button>
-            </Tooltip>
+              </Box>
+            </button>
           );
         })}
 
@@ -227,45 +207,65 @@ function SidePanel({
             >
               {astrologer.initials}
             </Box>
-            <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Box sx={{ minWidth: 0 }}>
               <Box className="side-panel__chat-title" style={{ color: astrologer.accent }}>
                 {astrologer.name}
                 {astrologer.type === 'live' && (
                   <VerifiedIcon sx={{ ml: 0.5, fontSize: 14, color: '#6B4FA0', verticalAlign: '-2px' }} />
                 )}
               </Box>
-              <Box className="side-panel__chat-meta">
-                {astrologer.type === 'live' && !astrologer.online
-                  ? `Offline · ${astrologer.speciality}`
-                  : astrologer.online
-                    ? `Online · ${astrologer.speciality}`
-                    : astrologer.speciality}
-              </Box>
+              <Box className="side-panel__chat-meta">{astrologer.speciality}</Box>
             </Box>
             <Box
               component="span"
               className={`presence-dot${astrologer.online ? ' presence-dot--online' : ''}`}
-              title={astrologer.online ? 'Online' : 'Offline'}
-              aria-label={astrologer.online ? 'Online' : 'Offline'}
             />
           </button>
         ))}
 
+        <Box className="side-panel__section">{t('navMemory')}</Box>
+        <button
+          type="button"
+          className={`side-panel__memory${isActive('/memory') ? ' side-panel__memory--active' : ''}`}
+          onClick={() => onNavigate('/memory')}
+          aria-label={t('navMemory')}
+          aria-current={isActive('/memory') ? 'page' : undefined}
+        >
+          <span className="side-panel__memory-icon" aria-hidden="true">
+            <AutoAwesomeIcon fontSize="small" />
+          </span>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Box className="side-panel__chat-title">{t('navMemory')}</Box>
+            <Box className="side-panel__chat-meta">
+              {memoryCount > 0
+                ? `${memoryCount} remembered detail${memoryCount === 1 ? '' : 's'}`
+                : 'Saved details for readings'}
+            </Box>
+          </Box>
+        </button>
+
         <Box className="side-panel__section">{t('menu')}</Box>
         {items.map((item) => {
-          const Icon = ICONS[item.icon];
+          const Icon = ICONS[item.icon] || AutoAwesomeIcon;
+          const memoryItem = item.path === '/memory';
           return (
             <button
               type="button"
               key={item.path}
-              className={`side-panel__item${isActive(item.path) ? ' side-panel__item--active' : ''}`}
+              className={`side-panel__item${isActive(item.path) ? ' side-panel__item--active' : ''}${
+                memoryItem ? ' side-panel__item--memory' : ''
+              }`}
               onClick={() => onNavigate(item.path)}
+              aria-label={item.label}
               aria-current={isActive(item.path) ? 'page' : undefined}
             >
               <span className="side-panel__icon">
                 <Icon fontSize="small" />
               </span>
               {item.label}
+              {memoryItem && memoryCount > 0 ? (
+                <span className="side-panel__memory-count">{memoryCount}</span>
+              ) : null}
             </button>
           );
         })}

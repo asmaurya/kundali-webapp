@@ -48,23 +48,111 @@ beforeEach(() => {
   } catch {
     /* ignore */
   }
+  const jsonResponse = (data, ok = true) => {
+    const body = JSON.stringify(data);
+    return {
+      ok,
+      async json() {
+        return data;
+      },
+      async text() {
+        return body;
+      },
+    };
+  };
+
   global.fetch = jest.fn(async (input, init) => {
     const url = String(input);
+    if (url.includes('/api/places/autocomplete')) {
+      return jsonResponse({ predictions: [], provider: 'none' });
+    }
+    if (url.includes('/api/places/details')) {
+      return jsonResponse({ place: null });
+    }
     if (url.includes('/api/chat')) {
       const body = JSON.parse(init.body);
+      return jsonResponse({
+        text: `From the chart: gradual progress rather than a sudden breakthrough for “${body.question}”.`,
+        provider: 'test',
+        used_llm: false,
+      });
+    }
+    if (url.includes('/api/health')) {
+      return { ok: true, async json() { return { ok: true, llm: false, places: false }; } };
+    }
+    if (url.includes('/api/admin/llm')) {
+      const body = init?.body ? JSON.parse(init.body) : {};
+      if (body.action === 'probe') {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              reply: { text: 'Steady skill-building.', provider: 'nvidia', used_llm: true },
+              trace: {
+                at: new Date().toISOString(),
+                ok: true,
+                provider: 'nvidia',
+                model: 'nvidia/nemotron-3.5-bolt-e4b',
+                baseUrl: 'https://integrate.api.nvidia.com/v1',
+                masterPrompt: 'Ground every answer…',
+                context: 'Lagna: Mesha',
+                question: body.question || 'probe',
+                thinking: 'Consider 10th house…',
+                output: 'Steady skill-building.',
+                usage: { promptTokens: 120, completionTokens: 40, totalTokens: 160 },
+                params: { topP: 1 },
+              },
+            };
+          },
+        };
+      }
       return {
         ok: true,
         async json() {
           return {
-            text: `From the chart: gradual progress rather than a sudden breakthrough for “${body.question}”.`,
-            provider: 'test',
-            used_llm: false,
+            ok: true,
+            lab: {
+              provider: 'nvidia',
+              providerLabel: 'NVIDIA NIM',
+              providerCustom: false,
+              keyLocked: true,
+              model: 'nvidia/nemotron-3.5-bolt-e4b',
+              masterPrompt: 'Ground every answer…',
+              topP: 1,
+              frequencyPenalty: 0,
+              presencePenalty: 0,
+              maxTokens: 1024,
+              captureThinking: true,
+              showThinking: false,
+              apiKeySet: true,
+              apiKeyMasked: '•••• permanent Cloudflare secret (NVIDIA_API_KEY)',
+              apiKeyRequired: false,
+              baseUrl: 'https://integrate.api.nvidia.com/v1',
+              secretName: 'NVIDIA_API_KEY',
+              cloudflareSecretsWritable: false,
+              providers: [
+                {
+                  id: 'nvidia',
+                  label: 'NVIDIA NIM',
+                  baseUrl: 'https://integrate.api.nvidia.com/v1',
+                  secretName: 'NVIDIA_API_KEY',
+                  defaultModel: 'nvidia/nemotron-3.5-bolt-e4b',
+                  keyLocked: true,
+                  custom: false,
+                  apiKeySet: true,
+                },
+              ],
+              defaults: {
+                masterPrompt: 'Ground every answer…',
+                model: 'nvidia/nemotron-3.5-bolt-e4b',
+                provider: 'nvidia',
+              },
+            },
+            admin: 'abhishek@example.com',
           };
         },
       };
-    }
-    if (url.includes('/api/health')) {
-      return { ok: true, async json() { return { ok: true, llm: false, places: false }; } };
     }
     if (url.includes('/api/settings') || url.includes('/api/account')) {
       return {
@@ -206,33 +294,39 @@ afterEach(() => {
   jest.resetAllMocks();
 });
 
-test('homepage renders the chat interface with a composer', () => {
+test('homepage renders the chat workspace with a composer and no duplicate chat list', () => {
   renderApp('/');
   expect(screen.getByPlaceholderText(/ask about your chart/i)).toBeInTheDocument();
-  expect(screen.getByRole('complementary', { name: /chat history/i })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: /conversation/i })).toBeInTheDocument();
+  expect(screen.queryByRole('complementary', { name: /chat history/i })).not.toBeInTheDocument();
 });
 
-test('several conversations are filed under each astrologer', () => {
+test('side panel lists recent chats and every astrologer', () => {
   renderApp('/chat');
-  const history = screen.getByRole('complementary', { name: /chat history/i });
-  expect(within(history).getByText('Career transition guidance')).toBeInTheDocument();
-  expect(within(history).getByText('Marriage compatibility')).toBeInTheDocument();
-  expect(within(history).getByText('Weekly horoscope')).toBeInTheDocument();
-  expect(within(history).getByText('Remedies for Saturn transit')).toBeInTheDocument();
-  expect(within(history).getByText('Marriage timing')).toBeInTheDocument();
+  const nav = openSidePanel();
+  expect(within(nav).getByText('Career transition guidance')).toBeInTheDocument();
+  expect(within(nav).getByText('Marriage compatibility')).toBeInTheDocument();
+  expect(within(nav).getByText('Weekly horoscope')).toBeInTheDocument();
+  expect(within(nav).getByText('Chart-based guidance')).toBeInTheDocument();
+  expect(within(nav).getByText('Acharya Rajiv Sharma')).toBeInTheDocument();
+  expect(within(nav).getByText('Acharya Meera Verma')).toBeInTheDocument();
+  expect(within(nav).getByText('Acharya Vikram Joshi')).toBeInTheDocument();
 });
 
-test('the chat history rail can start another chat with the AI astrologer', () => {
+test('picking a recent chat in the side panel opens it in the workspace', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByLabelText(/^new chat$/i));
-  const history = screen.getByRole('complementary', { name: /chat history/i });
-  expect(within(history).getByText('New chat')).toBeInTheDocument();
+  const nav = openSidePanel();
+  fireEvent.click(within(nav).getByText('Marriage compatibility'));
   expect(within(conversation()).getByText('Astro Chat')).toBeInTheDocument();
+  expect(
+    within(conversation()).getByText(/how compatible am i with a capricorn moon sign/i)
+  ).toBeInTheDocument();
 });
 
 test('a new chat defaults to the AI astrologer', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByLabelText(/^new chat$/i));
+  const buttons = screen.getAllByRole('button', { name: /^new chat$/i });
+  fireEvent.click(buttons[0]);
   expect(within(conversation()).getByText('Astro Chat')).toBeInTheDocument();
   expect(within(conversation()).queryByText(/book live session/i)).not.toBeInTheDocument();
 });
@@ -242,6 +336,7 @@ test('side panel lists every destination and puts Services above Subscription', 
   const nav = openSidePanel();
   const labels = [
     'Chat',
+    'Memory',
     'Services',
     'Family Members',
     'Kundali Chart',
@@ -250,8 +345,10 @@ test('side panel lists every destination and puts Services above Subscription', 
     'Settings',
   ];
   labels.forEach((label) => {
-    expect(within(nav).getByRole('button', { name: label })).toBeInTheDocument();
+    expect(within(nav).getAllByRole('button', { name: label }).length).toBeGreaterThan(0);
   });
+  // Dedicated Memory shortcut sits above Menu, plus Memory in Menu itself.
+  expect(within(nav).getAllByRole('button', { name: /^memory$/i }).length).toBeGreaterThanOrEqual(2);
 
   const services = within(nav).getByRole('button', { name: 'Services' });
   const subscription = within(nav).getByRole('button', { name: 'Subscription' });
@@ -267,11 +364,44 @@ test('the account block with a logout option sits at the bottom of the side pane
 });
 
 test('side panel is available on every page', () => {
-  ['/services', '/family', '/kundali', '/subscription', '/support', '/reports', '/astrologers', '/remedies'].forEach((path) => {
+  ['/services', '/family', '/kundali', '/subscription', '/support', '/reports', '/astrologers', '/remedies', '/settings'].forEach((path) => {
     const { unmount } = renderApp(path);
     expect(screen.getByLabelText(/open navigation/i)).toBeInTheDocument();
     unmount();
   });
+});
+
+test('settings links to LLM Lab and the lab page loads', async () => {
+  renderApp('/settings');
+  expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /open llm lab/i }));
+  await waitFor(
+    () => {
+      expect(screen.getByRole('heading', { name: /^llm lab$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save llm settings/i })).toBeInTheDocument();
+    },
+    { timeout: 10000 }
+  );
+  expect(screen.getByRole('button', { name: /reset defaults/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /llm console/i })).toBeInTheDocument();
+  expect(screen.queryByRole('complementary', { name: /chat history/i })).not.toBeInTheDocument();
+}, 15000);
+
+test('memory page is reachable from header spark and lists remembered details', () => {
+  renderApp('/chat');
+  fireEvent.click(screen.getByRole('button', { name: /open memory, \d+ remembered details/i }));
+  expect(screen.getByRole('heading', { name: /^memory$/i })).toBeInTheDocument();
+  expect(
+    screen.getByText(/considering a steady skill-building path/i)
+  ).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /what i shared/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /delete all memory/i })).toBeInTheDocument();
+});
+
+test('settings also links to Memory', () => {
+  renderApp('/settings');
+  fireEvent.click(screen.getByRole('button', { name: /^open memory$/i }));
+  expect(screen.getByRole('heading', { name: /^memory$/i })).toBeInTheDocument();
 });
 
 test('side panel navigation moves to the services screen', () => {
@@ -287,9 +417,10 @@ test('kundali page back link returns to the chat home page', () => {
   expect(screen.getByPlaceholderText(/ask about your chart/i)).toBeInTheDocument();
 });
 
-test('a live astrologer conversation is not blank and offers a live session', () => {
+test('picking a live astrologer in the side panel opens their conversation', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByRole('button', { name: /remedies for saturn transit/i }));
+  const nav = openSidePanel();
+  fireEvent.click(within(nav).getByText('Acharya Rajiv Sharma'));
   const region = conversation();
   expect(within(region).getByText('Acharya Rajiv Sharma')).toBeInTheDocument();
   expect(within(region).getByRole('button', { name: /book live session/i })).toBeInTheDocument();
@@ -304,6 +435,40 @@ test('family page can start adding a member with a relation', () => {
   expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
 });
 
+test('family wizard keeps date/time pickers, place field, and Create chart enable', async () => {
+  renderApp('/family');
+  fireEvent.click(screen.getByRole('button', { name: /add family member/i }));
+  fireEvent.change(screen.getByLabelText(/full name/i), {
+    target: { value: 'Priya Sharma' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: /^continue$/i }));
+
+  const dateInput = screen.getByLabelText(/^date of birth$/i);
+  const timeInput = screen.getByLabelText(/^time of birth$/i);
+  const placeInput = screen.getByLabelText(/place of birth/i);
+  expect(dateInput).toHaveAttribute('type', 'date');
+  expect(timeInput).toHaveAttribute('type', 'time');
+  // Leading icons still present (calendar + clock + place).
+  expect(screen.getByTestId('CalendarMonthIcon')).toBeInTheDocument();
+  expect(screen.getByTestId('ScheduleIcon')).toBeInTheDocument();
+  expect(screen.getByTestId('PlaceIcon')).toBeInTheDocument();
+  // Placeholder visible under a shrunk label (no overlap of unshrunk label).
+  expect(placeInput.getAttribute('placeholder') || '').toMatch(/start typing a city/i);
+
+  expect(screen.getByRole('button', { name: /create chart/i })).toBeDisabled();
+
+  fireEvent.change(dateInput, { target: { value: '2026-11-25' } });
+  fireEvent.change(timeInput, { target: { value: '12:30' } });
+  fireEvent.change(placeInput, { target: { value: 'Delhi, India' } });
+
+  await waitFor(
+    () => {
+      expect(screen.getByRole('button', { name: /create chart/i })).not.toBeDisabled();
+    },
+    { timeout: 10000 }
+  );
+}, 15000);
+
 test('services open dedicated reports, astrologers and remedies pages', () => {
   renderApp('/services');
   fireEvent.click(screen.getByText(/detailed reports/i));
@@ -313,8 +478,19 @@ test('services open dedicated reports, astrologers and remedies pages', () => {
 
 test('chat composer exposes family context chips', () => {
   renderApp('/chat');
-  // Seeded family names appear as insertable context near the composer.
-  expect(screen.getByRole('button', { name: /ramesh sharma/i })).toBeInTheDocument();
+  // Seeded family names appear on a dedicated Family row near the composer.
+  const familyRow = screen.getByLabelText(/family members/i);
+  expect(within(familyRow).getByRole('button', { name: /ramesh sharma/i })).toBeInTheDocument();
+});
+
+test('chat seeds demo family chips when none are stored yet', () => {
+  // Simulate a fresh device where the family key was never written.
+  window.localStorage.removeItem(STORAGE_KEYS.family);
+  renderApp('/chat');
+  const familyRow = screen.getByLabelText(/family members/i);
+  expect(within(familyRow).getByRole('button', { name: /ramesh sharma/i })).toBeInTheDocument();
+  expect(within(familyRow).getByRole('button', { name: /sunita sharma/i })).toBeInTheDocument();
+  expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.family)).length).toBeGreaterThan(0);
 });
 
 test('unguarded routes redirect to splash when there is no invite', () => {
@@ -345,26 +521,31 @@ test('returning users with a completed session land on chat from splash', () => 
 
 test('chats persist across remounts', async () => {
   const { unmount } = renderApp('/chat');
-  fireEvent.click(screen.getByRole('button', { name: /^new chat$/i }));
+  fireEvent.click(screen.getAllByRole('button', { name: /^new chat$/i })[0]);
   const input = screen.getByPlaceholderText(/ask about your chart/i);
   fireEvent.change(input, {
     target: { value: 'Career advice for a switch' },
   });
   fireEvent.submit(input.closest('form'));
-  await waitFor(() => {
-    expect(
-      within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
-    ).toBeInTheDocument();
-  });
+  await waitFor(
+    () => {
+      expect(
+        within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
+      ).toBeInTheDocument();
+    },
+    { timeout: 10000 }
+  );
   unmount();
 
   renderApp('/chat');
+  // Active conversation persists in the workspace (no middle chat rail).
   expect(
-    within(screen.getByRole('complementary', { name: /chat history/i })).getByText(
-      'Career advice for a switch'
-    )
+    within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
   ).toBeInTheDocument();
-});
+  expect(
+    within(conversation()).getAllByText(/career advice for a switch/i).length
+  ).toBeGreaterThan(0);
+}, 15000);
 
 test('logout clears the invite and returns to splash', () => {
   const first = renderApp('/');

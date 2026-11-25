@@ -12,6 +12,34 @@ import {
 
 export const SELF_ID = 'self';
 
+/** Demo family used when the device has never saved a family list. */
+export const DEMO_FAMILY_MEMBERS = [
+  {
+    id: 1,
+    name: 'Ramesh Sharma',
+    relation: 'Father',
+    date: '1962-03-12',
+    time: '06:15',
+    place: 'Jaipur, Rajasthan, India',
+    chartReady: false,
+  },
+  {
+    id: 2,
+    name: 'Sunita Sharma',
+    relation: 'Mother',
+    date: '1965-11-02',
+    time: '09:40',
+    place: 'Jaipur, Rajasthan, India',
+    chartReady: false,
+  },
+  {
+    id: 3,
+    name: 'Aman Sharma',
+    relation: 'Brother',
+    chartReady: false,
+  },
+];
+
 function displayNameFromEmail(email) {
   if (!email) return 'You';
   const local = String(email).split('@')[0] || 'You';
@@ -68,6 +96,17 @@ export function withChartStatus(member) {
     chart: ready ? member.chart : null,
     chartReady: ready,
   };
+}
+
+/**
+ * Persist demo family once when the family key is missing.
+ * Does not overwrite an intentional empty list (`[]`).
+ */
+export function ensureFamilySeeds() {
+  const stored = loadFamilyMembers(null);
+  if (Array.isArray(stored)) return getFamilyOnly();
+  const seeded = DEMO_FAMILY_MEMBERS.map((member) => ({ ...member, chartReady: false }));
+  return persistFamilyMembers(seeded);
 }
 
 /** Self first, then family members (never duplicates Self). */

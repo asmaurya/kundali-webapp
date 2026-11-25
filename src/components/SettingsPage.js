@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Button, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import TuneIcon from '@mui/icons-material/Tune';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { useNavigate } from 'react-router-dom';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -64,6 +65,21 @@ function SettingsPage({ onBack }) {
           </ToggleButtonGroup>
 
           <Typography sx={{ mt: 2, fontSize: 13, color: '#6A6580' }}>{statusLabel}</Typography>
+        </Box>
+
+        <Box className="panel" sx={{ mt: 2.5 }}>
+          <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>Memory</Typography>
+          <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
+            Review remembered details used in chart readings, edit or delete them, and see what you
+            shared with live astrologers.
+          </Typography>
+          <Button
+            startIcon={<AutoAwesomeIcon fontSize="small" />}
+            onClick={() => navigate('/memory')}
+            sx={{ mt: 2, textTransform: 'none', color: '#B7791F' }}
+          >
+            Open Memory
+          </Button>
         </Box>
 
         <Box className="panel" sx={{ mt: 2.5 }}>

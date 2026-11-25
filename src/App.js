@@ -18,6 +18,7 @@ import SubscriptionPage from './components/SubscriptionPage';
 import SupportPage from './components/SupportPage';
 import SettingsPage from './components/SettingsPage';
 import LlmLabPage from './components/LlmLabPage';
+import MemoryPage from './components/MemoryPage';
 import ReportsPage from './components/ReportsPage';
 import AstrologersPage from './components/AstrologersPage';
 import RemediesPage from './components/RemediesPage';
@@ -38,7 +39,8 @@ import {
   saveSession,
 } from './betaSession';
 import { ensureLibrarySeeds } from './lib/libraryStore';
-import { getSelfProfile } from './lib/profiles';
+import { countActiveMemory, ensureMemorySeeds } from './lib/memoryStore';
+import { ensureFamilySeeds, getSelfProfile } from './lib/profiles';
 
 const ONBOARDING_PATHS = new Set(['/splash', '/invite', '/birth-details', '/creating-chart']);
 const PUBLIC_PATHS = new Set(['/splash', '/invite']);
@@ -83,6 +85,8 @@ function AppShell() {
   const navItems = useMemo(
     () => [
       { label: t('navChat'), path: '/', icon: 'chat' },
+      // Keep Memory near the top of Menu so it is not missed below Family/Services.
+      { label: t('navMemory'), path: '/memory', icon: 'memory' },
       { label: t('navKundali'), path: '/kundali', icon: 'kundali' },
       { label: t('navFamily'), path: '/family', icon: 'family' },
       { label: t('navServices'), path: '/services', icon: 'services' },
@@ -104,6 +108,7 @@ function AppShell() {
       '/services': t('navServices'),
       '/family': t('navFamily'),
       '/kundali': t('navKundali'),
+      '/memory': t('navMemory'),
       '/subscription': t('navSubscription'),
       '/support': t('navSupport'),
       '/settings': t('navSettings'),
@@ -160,8 +165,13 @@ function AppShell() {
   useEffect(() => {
     if (onboarded) {
       ensureLibrarySeeds({ memberName: getSelfProfile().name });
+      ensureMemorySeeds('self');
+      // Seed demo family so chat context chips have names even before opening Family.
+      ensureFamilySeeds();
     }
   }, [onboarded]);
+
+  const memoryCount = onboarded ? countActiveMemory('self') : 0;
 
   const handleLogout = useCallback(() => {
     clearBetaSession();
@@ -221,6 +231,12 @@ function AppShell() {
     [navigate, startChat]
   );
 
+  const handleNewChat = () => {
+    startChat('astro-chat');
+    navigate('/chat');
+    setDrawerOpen(false);
+  };
+
   const handleSplashNext = () => {
     if (!isInvited()) {
       navigate('/invite');
@@ -264,7 +280,9 @@ function AppShell() {
           <AppHeader
             title={title}
             onMenuClick={handleMenuClick}
-            newChat={null}
+            newChat={isChatPage ? handleNewChat : null}
+            memoryCount={showChrome ? memoryCount : null}
+            onMemoryClick={showChrome ? () => handleNavigate('/memory') : null}
           />
         )}
         {showChrome && <LowBalanceBanner />}
@@ -365,6 +383,14 @@ function AppShell() {
               element={
                 <RequireOnboarding>
                   <LlmLabPage onBack={() => navigate('/settings')} />
+                </RequireOnboarding>
+              }
+            />
+            <Route
+              path="/memory"
+              element={
+                <RequireOnboarding>
+                  <MemoryPage onBack={() => navigate('/')} />
                 </RequireOnboarding>
               }
             />

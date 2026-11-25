@@ -18,57 +18,18 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import FamilyMemberCard from './FamilyMemberCard';
 import AppModal from './AppModal';
 import PlaceOfBirthField from './PlaceOfBirthField';
+import { birthFieldSx, birthPickerSlotProps } from './birthFieldSx';
 import {
+  DEMO_FAMILY_MEMBERS,
+  ensureFamilySeeds,
   ensureMemberChart,
   getFamilyOnly,
   getSelfProfile,
   persistFamilyMembers,
   withChartStatus,
 } from '../lib/profiles';
-import { loadFamilyMembers } from '../betaSession';
-
-const fieldSx = {
-  '& .MuiOutlinedInput-root': {
-    bgcolor: '#FDFBFF',
-    borderRadius: 2.5,
-  },
-  '& .MuiInputLabel-root': {
-    backgroundColor: '#FFFFFF',
-    px: 0.5,
-  },
-  '& .MuiInputLabel-shrink': {
-    transform: 'translate(14px, -9px) scale(0.75)',
-  },
-};
 
 const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister'];
-
-const INITIAL_MEMBERS = [
-  {
-    id: 1,
-    name: 'Ramesh Sharma',
-    relation: 'Father',
-    date: '1962-03-12',
-    time: '06:15',
-    place: 'Jaipur, Rajasthan, India',
-    chartReady: false,
-  },
-  {
-    id: 2,
-    name: 'Sunita Sharma',
-    relation: 'Mother',
-    date: '1965-11-02',
-    time: '09:40',
-    place: 'Jaipur, Rajasthan, India',
-    chartReady: false,
-  },
-  {
-    id: 3,
-    name: 'Aman Sharma',
-    relation: 'Brother',
-    chartReady: false,
-  },
-];
 
 const EMPTY_FORM = {
   name: '',
@@ -97,13 +58,8 @@ function buildBirthFromForm(form, placeMeta) {
 
 function FamilyListPage() {
   const [members, setMembers] = useState(() => {
-    const stored = loadFamilyMembers(null);
-    const family = Array.isArray(stored)
-      ? getFamilyOnly().map(withChartStatus)
-      : getFamilyOnly(INITIAL_MEMBERS).map(withChartStatus);
-    if (!Array.isArray(stored)) {
-      persistFamilyMembers(family);
-    }
+    ensureFamilySeeds();
+    const family = getFamilyOnly().map(withChartStatus);
     return [getSelfProfile(), ...family];
   });
 
@@ -263,7 +219,27 @@ function FamilyListPage() {
   };
 
   const stepOneValid = form.name.trim().length > 0;
-  const stepTwoValid = Boolean(form.date && form.time && form.place);
+  // Enable once date, time, and a place string are present. Prefer a resolved
+  // suggestion (lat/lon) when available; never leave the button stuck after a pick.
+  const placeReady = Boolean(
+    (typeof form.place === 'string' && form.place.trim()) ||
+      (placeMeta && (placeMeta.label || placeMeta.placeId))
+  );
+  const stepTwoValid = Boolean(form.date && form.time && placeReady);
+
+  const handlePlaceChange = (place) => {
+    setForm((current) => ({ ...current, place: place || '' }));
+  };
+
+  const handlePlaceResolved = (meta) => {
+    setPlaceMeta(meta);
+    if (meta && (meta.label || meta.placeId)) {
+      setForm((current) => ({
+        ...current,
+        place: meta.label || current.place || '',
+      }));
+    }
+  };
 
   return (
     <Box className="stack-page">
@@ -407,17 +383,15 @@ function FamilyListPage() {
               value={form.date}
               onChange={update('date')}
               fullWidth
-              slotProps={{
-                inputLabel: { shrink: true },
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <CalendarMonthIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-              sx={fieldSx}
+              slotProps={birthPickerSlotProps({
+                ariaLabel: 'Date of Birth',
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <CalendarMonthIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
+                  </InputAdornment>
+                ),
+              })}
+              sx={birthFieldSx}
             />
             <TextField
               label="Time of Birth"
@@ -425,25 +399,23 @@ function FamilyListPage() {
               value={form.time}
               onChange={update('time')}
               fullWidth
-              slotProps={{
-                inputLabel: { shrink: true },
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <ScheduleIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-              sx={fieldSx}
+              slotProps={birthPickerSlotProps({
+                ariaLabel: 'Time of Birth',
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <ScheduleIcon sx={{ color: '#5B3FA0' }} fontSize="small" />
+                  </InputAdornment>
+                ),
+              })}
+              sx={birthFieldSx}
             />
             <PlaceOfBirthField
               label="Place of Birth"
               placeholder="Start typing a city…"
               hint="Pick a place from the suggestions for an accurate chart."
               value={form.place}
-              onChange={(place) => setForm((current) => ({ ...current, place }))}
-              onResolved={setPlaceMeta}
+              onChange={handlePlaceChange}
+              onResolved={handlePlaceResolved}
             />
           </Box>
         )}
