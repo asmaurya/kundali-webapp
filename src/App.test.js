@@ -116,28 +116,33 @@ afterEach(() => {
   jest.resetAllMocks();
 });
 
-test('homepage renders the chat interface with a composer', () => {
+test('homepage renders the chat workspace with a composer and no duplicate chat list', () => {
   renderApp('/');
   expect(screen.getByPlaceholderText(/ask about your chart/i)).toBeInTheDocument();
-  expect(screen.getByRole('complementary', { name: /chat history/i })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: /conversation/i })).toBeInTheDocument();
+  expect(screen.queryByRole('complementary', { name: /chat history/i })).not.toBeInTheDocument();
 });
 
-test('several conversations are filed under each astrologer', () => {
+test('side panel lists recent chats and every astrologer', () => {
   renderApp('/chat');
-  const history = screen.getByRole('complementary', { name: /chat history/i });
-  expect(within(history).getByText('Career transition guidance')).toBeInTheDocument();
-  expect(within(history).getByText('Marriage compatibility')).toBeInTheDocument();
-  expect(within(history).getByText('Weekly horoscope')).toBeInTheDocument();
-  expect(within(history).getByText('Remedies for Saturn transit')).toBeInTheDocument();
-  expect(within(history).getByText('Marriage timing')).toBeInTheDocument();
+  const nav = openSidePanel();
+  expect(within(nav).getByText('Career transition guidance')).toBeInTheDocument();
+  expect(within(nav).getByText('Marriage compatibility')).toBeInTheDocument();
+  expect(within(nav).getByText('Weekly horoscope')).toBeInTheDocument();
+  expect(within(nav).getByText('Chart-based guidance')).toBeInTheDocument();
+  expect(within(nav).getByText('Acharya Rajiv Sharma')).toBeInTheDocument();
+  expect(within(nav).getByText('Acharya Meera Verma')).toBeInTheDocument();
+  expect(within(nav).getByText('Acharya Vikram Joshi')).toBeInTheDocument();
 });
 
-test('the chat history rail can start another chat with the same astrologer', () => {
+test('picking a recent chat in the side panel opens it in the workspace', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByLabelText(/new chat with astro chat/i));
-  const history = screen.getByRole('complementary', { name: /chat history/i });
-  expect(within(history).getByText('New chat')).toBeInTheDocument();
+  const nav = openSidePanel();
+  fireEvent.click(within(nav).getByText('Marriage compatibility'));
   expect(within(conversation()).getByText('Astro Chat')).toBeInTheDocument();
+  expect(
+    within(conversation()).getByText(/how compatible am i with a capricorn moon sign/i)
+  ).toBeInTheDocument();
 });
 
 test('a new chat defaults to the AI astrologer', () => {
@@ -197,9 +202,10 @@ test('kundali page back link returns to the chat home page', () => {
   expect(screen.getByPlaceholderText(/ask about your chart/i)).toBeInTheDocument();
 });
 
-test('a live astrologer conversation is not blank and offers a live session', () => {
+test('picking a live astrologer in the side panel opens their conversation', () => {
   renderApp('/chat');
-  fireEvent.click(screen.getByLabelText(/new chat with acharya rajiv sharma/i));
+  const nav = openSidePanel();
+  fireEvent.click(within(nav).getByText('Acharya Rajiv Sharma'));
   const region = conversation();
   expect(within(region).getByText('Acharya Rajiv Sharma')).toBeInTheDocument();
   expect(within(region).getByRole('button', { name: /book live session/i })).toBeInTheDocument();
@@ -269,11 +275,8 @@ test('chats persist across remounts', async () => {
   unmount();
 
   renderApp('/chat');
-  expect(
-    within(screen.getByRole('complementary', { name: /chat history/i })).getByText(
-      'Career advice for a switch'
-    )
-  ).toBeInTheDocument();
+  const nav = openSidePanel();
+  expect(within(nav).getByText('Career advice for a switch')).toBeInTheDocument();
 });
 
 test('logout clears the invite and returns to splash', () => {
