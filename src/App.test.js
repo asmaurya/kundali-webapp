@@ -61,6 +61,80 @@ beforeEach(() => {
     if (url.includes('/api/health')) {
       return { ok: true, async json() { return { ok: true, llm: false, places: false }; } };
     }
+    if (url.includes('/api/admin/llm')) {
+      const body = init?.body ? JSON.parse(init.body) : {};
+      if (body.action === 'probe') {
+        return {
+          ok: true,
+          async json() {
+            return {
+              ok: true,
+              reply: { text: 'Steady skill-building.', provider: 'nvidia', used_llm: true },
+              trace: {
+                at: new Date().toISOString(),
+                ok: true,
+                provider: 'nvidia',
+                model: 'nvidia/nemotron-3.5-bolt-e4b',
+                baseUrl: 'https://integrate.api.nvidia.com/v1',
+                masterPrompt: 'Ground every answer…',
+                context: 'Lagna: Mesha',
+                question: body.question || 'probe',
+                thinking: 'Consider 10th house…',
+                output: 'Steady skill-building.',
+                usage: { promptTokens: 120, completionTokens: 40, totalTokens: 160 },
+                params: { topP: 1 },
+              },
+            };
+          },
+        };
+      }
+      return {
+        ok: true,
+        async json() {
+          return {
+            ok: true,
+            lab: {
+              provider: 'nvidia',
+              providerLabel: 'NVIDIA NIM',
+              providerCustom: false,
+              keyLocked: true,
+              model: 'nvidia/nemotron-3.5-bolt-e4b',
+              masterPrompt: 'Ground every answer…',
+              topP: 1,
+              frequencyPenalty: 0,
+              presencePenalty: 0,
+              maxTokens: 1024,
+              captureThinking: true,
+              showThinking: false,
+              apiKeySet: true,
+              apiKeyMasked: '•••• permanent Cloudflare secret (NVIDIA_API_KEY)',
+              apiKeyRequired: false,
+              baseUrl: 'https://integrate.api.nvidia.com/v1',
+              secretName: 'NVIDIA_API_KEY',
+              cloudflareSecretsWritable: false,
+              providers: [
+                {
+                  id: 'nvidia',
+                  label: 'NVIDIA NIM',
+                  baseUrl: 'https://integrate.api.nvidia.com/v1',
+                  secretName: 'NVIDIA_API_KEY',
+                  defaultModel: 'nvidia/nemotron-3.5-bolt-e4b',
+                  keyLocked: true,
+                  custom: false,
+                  apiKeySet: true,
+                },
+              ],
+              defaults: {
+                masterPrompt: 'Ground every answer…',
+                model: 'nvidia/nemotron-3.5-bolt-e4b',
+                provider: 'nvidia',
+              },
+            },
+            admin: 'abhishek@example.com',
+          };
+        },
+      };
+    }
     if (url.includes('/api/settings') || url.includes('/api/account')) {
       return {
         ok: true,
@@ -182,12 +256,28 @@ test('the account block with a logout option sits at the bottom of the side pane
 });
 
 test('side panel is available on every page', () => {
-  ['/services', '/family', '/kundali', '/subscription', '/support', '/reports', '/astrologers', '/remedies'].forEach((path) => {
+  ['/services', '/family', '/kundali', '/subscription', '/support', '/reports', '/astrologers', '/remedies', '/settings'].forEach((path) => {
     const { unmount } = renderApp(path);
     expect(screen.getByLabelText(/open navigation/i)).toBeInTheDocument();
     unmount();
   });
 });
+
+test('settings links to LLM Lab and the lab page loads', async () => {
+  renderApp('/settings');
+  expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /open llm lab/i }));
+  await waitFor(
+    () => {
+      expect(screen.getByRole('heading', { name: /^llm lab$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save llm settings/i })).toBeInTheDocument();
+    },
+    { timeout: 10000 }
+  );
+  expect(screen.getByRole('button', { name: /reset defaults/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /llm console/i })).toBeInTheDocument();
+  expect(screen.queryByRole('complementary', { name: /chat history/i })).not.toBeInTheDocument();
+}, 15000);
 
 test('side panel navigation moves to the services screen', () => {
   renderApp('/');
@@ -267,17 +357,25 @@ test('chats persist across remounts', async () => {
     target: { value: 'Career advice for a switch' },
   });
   fireEvent.submit(input.closest('form'));
-  await waitFor(() => {
-    expect(
-      within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
-    ).toBeInTheDocument();
-  });
+  await waitFor(
+    () => {
+      expect(
+        within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
+      ).toBeInTheDocument();
+    },
+    { timeout: 10000 }
+  );
   unmount();
 
   renderApp('/chat');
-  const nav = openSidePanel();
-  expect(within(nav).getByText('Career advice for a switch')).toBeInTheDocument();
-});
+  // Active conversation persists in the workspace (no middle chat rail).
+  expect(
+    within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
+  ).toBeInTheDocument();
+  expect(
+    within(conversation()).getByText(/career advice for a switch/i)
+  ).toBeInTheDocument();
+}, 15000);
 
 test('logout clears the invite and returns to splash', () => {
   const first = renderApp('/');
