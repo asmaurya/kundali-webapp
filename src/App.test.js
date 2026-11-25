@@ -231,17 +231,19 @@ test('side panel lists every destination and puts Services above Subscription', 
   const nav = openSidePanel();
   const labels = [
     'Chat',
+    'Memory',
     'Services',
     'Family Members',
     'Kundali Chart',
-    'Memory',
     'Subscription',
     'Support',
     'Settings',
   ];
   labels.forEach((label) => {
-    expect(within(nav).getByRole('button', { name: label })).toBeInTheDocument();
+    expect(within(nav).getAllByRole('button', { name: label }).length).toBeGreaterThan(0);
   });
+  // Dedicated Memory shortcut sits above Menu, plus Memory in Menu itself.
+  expect(within(nav).getAllByRole('button', { name: /^memory$/i }).length).toBeGreaterThanOrEqual(2);
 
   const services = within(nav).getByRole('button', { name: 'Services' });
   const subscription = within(nav).getByRole('button', { name: 'Subscription' });

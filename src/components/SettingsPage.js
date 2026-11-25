@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Button, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import TuneIcon from '@mui/icons-material/Tune';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { useNavigate } from 'react-router-dom';
 import { useLocale } from '../i18n/LocaleContext';
 
@@ -73,6 +74,7 @@ function SettingsPage({ onBack }) {
             shared with live astrologers.
           </Typography>
           <Button
+            startIcon={<AutoAwesomeIcon fontSize="small" />}
             onClick={() => navigate('/memory')}
             sx={{ mt: 2, textTransform: 'none', color: '#B7791F' }}
           >
