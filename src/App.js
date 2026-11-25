@@ -39,7 +39,7 @@ import {
 } from './betaSession';
 import { ensureLibrarySeeds } from './lib/libraryStore';
 import { countActiveMemory, ensureMemorySeeds } from './lib/memoryStore';
-import { getSelfProfile } from './lib/profiles';
+import { ensureFamilySeeds, getSelfProfile } from './lib/profiles';
 
 const ONBOARDING_PATHS = new Set(['/splash', '/invite', '/birth-details', '/creating-chart']);
 const PUBLIC_PATHS = new Set(['/splash', '/invite']);
@@ -165,6 +165,8 @@ function AppShell() {
     if (onboarded) {
       ensureLibrarySeeds({ memberName: getSelfProfile().name });
       ensureMemorySeeds('self');
+      // Seed demo family so chat context chips have names even before opening Family.
+      ensureFamilySeeds();
     }
   }, [onboarded]);
 

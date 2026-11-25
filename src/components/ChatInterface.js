@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import SendIcon from '@mui/icons-material/Send';
 import VerifiedIcon from '@mui/icons-material/Verified';
@@ -11,22 +11,44 @@ import SpaIcon from '@mui/icons-material/Spa';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { ASTROLOGERS, useChat } from '../chatStore';
 import { useLocale } from '../i18n/LocaleContext';
-import { listProfiles } from '../lib/profiles';
+import { ensureFamilySeeds, listProfiles } from '../lib/profiles';
+
+function readFamilyChips() {
+  ensureFamilySeeds();
+  return listProfiles().filter((p) => !p.isSelf);
+}
 
 function ChatInterface() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { t } = useLocale();
   const { conversations, active, openConversation, startChat, sendMessage } = useChat();
   const [draft, setDraft] = useState('');
+  const [familyChips, setFamilyChips] = useState(() => readFamilyChips());
   const inputRef = useRef(null);
   const requested = location.state && location.state.astrologerId;
   const requestedHandled = useRef(false);
-  const familyChips = useMemo(
-    () => listProfiles().filter((p) => !p.isSelf),
-    // Refresh when conversations change keeps it light without a family store subscription.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conversations.length]
-  );
+
+  const refreshFamilyChips = useCallback(() => {
+    setFamilyChips(readFamilyChips());
+  }, []);
+
+  useEffect(() => {
+    refreshFamilyChips();
+  }, [refreshFamilyChips, location.pathname, conversations.length]);
+
+  useEffect(() => {
+    const onFocus = () => refreshFamilyChips();
+    const onStorage = (event) => {
+      if (!event.key || event.key.includes('family')) refreshFamilyChips();
+    };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [refreshFamilyChips]);
 
   const SUGGESTIONS = [
     { label: t('career'), icon: WorkIcon },
@@ -128,56 +150,55 @@ function ChatInterface() {
                 </Box>
               </Box>
             ))}
-
           </Box>
         </Box>
 
         <Box className="composer-wrap">
           <Box
-            sx={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 0.75,
-              px: 0.5,
-              pb: 1,
-              alignItems: 'center',
-            }}
+            className="composer-context"
             aria-label="Add context to your question"
           >
-            {SUGGESTIONS.map(({ label, icon: Icon }) => (
-              <button
-                type="button"
-                key={label}
-                className="suggestion"
-                onClick={() => insertTopic(label)}
-                style={{ fontSize: 12, padding: '4px 10px' }}
-              >
-                <Icon fontSize="inherit" />
-                {label}
-              </button>
-            ))}
-            {familyChips.map((member) => (
-              <button
-                type="button"
-                key={member.id}
-                className="suggestion"
-                onClick={() => insertMember(member)}
-                title={`Include ${member.name} (${member.relation}) in this question`}
-                style={{
-                  fontSize: 12,
-                  padding: '4px 10px',
-                  borderRadius: 999,
-                  border: draft.includes(`@${member.name}`)
-                    ? '1px solid #5B3FA0'
-                    : '1px solid #E6DEEF',
-                  background: draft.includes(`@${member.name}`) ? '#EFE9F7' : '#FFFFFF',
-                  color: '#3A3550',
-                }}
-              >
-                {member.name}
-                <span style={{ color: '#8A849E', marginLeft: 6 }}>{member.relation}</span>
-              </button>
-            ))}
+            <Box className="composer-context__row">
+              <Typography className="composer-context__label">Topics</Typography>
+              {SUGGESTIONS.map(({ label, icon: Icon }) => (
+                <button
+                  type="button"
+                  key={label}
+                  className="suggestion"
+                  onClick={() => insertTopic(label)}
+                >
+                  <Icon fontSize="inherit" />
+                  {label}
+                </button>
+              ))}
+            </Box>
+            <Box className="composer-context__row" aria-label="Family members">
+              <Typography className="composer-context__label">Family</Typography>
+              {familyChips.length > 0 ? (
+                familyChips.map((member) => (
+                  <button
+                    type="button"
+                    key={member.id}
+                    className={`suggestion suggestion--family${
+                      draft.includes(`@${member.name}`) ? ' suggestion--on' : ''
+                    }`}
+                    onClick={() => insertMember(member)}
+                    title={`Include ${member.name} (${member.relation}) in this question`}
+                  >
+                    {member.name}
+                    <span className="suggestion__meta">{member.relation}</span>
+                  </button>
+                ))
+              ) : (
+                <button
+                  type="button"
+                  className="suggestion suggestion--family"
+                  onClick={() => navigate('/family')}
+                >
+                  Add family members
+                </button>
+              )}
+            </Box>
           </Box>
           <form className="composer" onSubmit={submit}>
             <Tooltip title="Attach a file">

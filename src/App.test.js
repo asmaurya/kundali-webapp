@@ -43,20 +43,34 @@ beforeEach(() => {
       chartReady: true,
     },
   ]);
+  const jsonResponse = (data, ok = true) => {
+    const body = JSON.stringify(data);
+    return {
+      ok,
+      async json() {
+        return data;
+      },
+      async text() {
+        return body;
+      },
+    };
+  };
+
   global.fetch = jest.fn(async (input, init) => {
     const url = String(input);
+    if (url.includes('/api/places/autocomplete')) {
+      return jsonResponse({ predictions: [], provider: 'none' });
+    }
+    if (url.includes('/api/places/details')) {
+      return jsonResponse({ place: null });
+    }
     if (url.includes('/api/chat')) {
       const body = JSON.parse(init.body);
-      return {
-        ok: true,
-        async json() {
-          return {
-            text: `From the chart: gradual progress rather than a sudden breakthrough for “${body.question}”.`,
-            provider: 'test',
-            used_llm: false,
-          };
-        },
-      };
+      return jsonResponse({
+        text: `From the chart: gradual progress rather than a sudden breakthrough for “${body.question}”.`,
+        provider: 'test',
+        used_llm: false,
+      });
     }
     if (url.includes('/api/health')) {
       return { ok: true, async json() { return { ok: true, llm: false, places: false }; } };
@@ -330,6 +344,31 @@ test('family page can start adding a member with a relation', () => {
   expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
 });
 
+test('family wizard enables Create chart after date, time and place', async () => {
+  renderApp('/family');
+  fireEvent.click(screen.getByRole('button', { name: /add family member/i }));
+  fireEvent.change(screen.getByLabelText(/full name/i), {
+    target: { value: 'Priya Sharma' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: /^continue$/i }));
+
+  expect(screen.getByRole('button', { name: /create chart/i })).toBeDisabled();
+
+  fireEvent.change(screen.getByLabelText(/^date of birth$/i), {
+    target: { value: '2026-11-25' },
+  });
+  fireEvent.change(screen.getByLabelText(/^time of birth$/i), {
+    target: { value: '12:30' },
+  });
+  fireEvent.change(screen.getByLabelText(/place of birth/i), {
+    target: { value: 'Delhi, India' },
+  });
+
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /create chart/i })).not.toBeDisabled();
+  });
+});
+
 test('services open dedicated reports, astrologers and remedies pages', () => {
   renderApp('/services');
   fireEvent.click(screen.getByText(/detailed reports/i));
@@ -339,8 +378,19 @@ test('services open dedicated reports, astrologers and remedies pages', () => {
 
 test('chat composer exposes family context chips', () => {
   renderApp('/chat');
-  // Seeded family names appear as insertable context near the composer.
-  expect(screen.getByRole('button', { name: /ramesh sharma/i })).toBeInTheDocument();
+  // Seeded family names appear on a dedicated Family row near the composer.
+  const familyRow = screen.getByLabelText(/family members/i);
+  expect(within(familyRow).getByRole('button', { name: /ramesh sharma/i })).toBeInTheDocument();
+});
+
+test('chat seeds demo family chips when none are stored yet', () => {
+  // Simulate a fresh device where the family key was never written.
+  window.localStorage.removeItem(STORAGE_KEYS.family);
+  renderApp('/chat');
+  const familyRow = screen.getByLabelText(/family members/i);
+  expect(within(familyRow).getByRole('button', { name: /ramesh sharma/i })).toBeInTheDocument();
+  expect(within(familyRow).getByRole('button', { name: /sunita sharma/i })).toBeInTheDocument();
+  expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.family)).length).toBeGreaterThan(0);
 });
 
 test('unguarded routes redirect to splash when there is no invite', () => {
@@ -393,8 +443,8 @@ test('chats persist across remounts', async () => {
     within(conversation()).getByText(/gradual progress rather than a sudden breakthrough/i)
   ).toBeInTheDocument();
   expect(
-    within(conversation()).getByText(/career advice for a switch/i)
-  ).toBeInTheDocument();
+    within(conversation()).getAllByText(/career advice for a switch/i).length
+  ).toBeGreaterThan(0);
 }, 15000);
 
 test('logout clears the invite and returns to splash', () => {
