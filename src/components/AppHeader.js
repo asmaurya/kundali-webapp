@@ -1,9 +1,10 @@
 import React from 'react';
-import { Box, Button, IconButton } from '@mui/material';
+import { Badge, Box, Button, IconButton, Tooltip } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import AddCommentIcon from '@mui/icons-material/AddComment';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 
-function AppHeader({ title, onMenuClick, newChat }) {
+function AppHeader({ title, onMenuClick, newChat, memoryCount = null, onMemoryClick = null }) {
   return (
     <header className="app-header">
       <IconButton
@@ -17,6 +18,29 @@ function AppHeader({ title, onMenuClick, newChat }) {
       </IconButton>
       <span className="app-header__title">{title}</span>
       <Box className="app-header__spacer" />
+      {onMemoryClick && (
+        <Tooltip title="Memory">
+          <IconButton
+            aria-label={
+              typeof memoryCount === 'number'
+                ? `Open memory, ${memoryCount} remembered details`
+                : 'Open memory'
+            }
+            onClick={onMemoryClick}
+            size="medium"
+            sx={{ color: '#B7791F', mr: newChat ? 0.5 : 0 }}
+          >
+            <Badge
+              badgeContent={memoryCount > 0 ? memoryCount : 0}
+              color="warning"
+              max={99}
+              invisible={!memoryCount}
+            >
+              <AutoAwesomeIcon fontSize="small" />
+            </Badge>
+          </IconButton>
+        </Tooltip>
+      )}
       {newChat && (
         <Button
           variant="outlined"

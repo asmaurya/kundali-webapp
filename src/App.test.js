@@ -234,6 +234,7 @@ test('side panel lists every destination and puts Services above Subscription', 
     'Services',
     'Family Members',
     'Kundali Chart',
+    'Memory',
     'Subscription',
     'Support',
     'Settings',
@@ -278,6 +279,23 @@ test('settings links to LLM Lab and the lab page loads', async () => {
   expect(screen.getByRole('heading', { name: /llm console/i })).toBeInTheDocument();
   expect(screen.queryByRole('complementary', { name: /chat history/i })).not.toBeInTheDocument();
 }, 15000);
+
+test('memory page is reachable from header spark and lists remembered details', () => {
+  renderApp('/chat');
+  fireEvent.click(screen.getByRole('button', { name: /open memory, \d+ remembered details/i }));
+  expect(screen.getByRole('heading', { name: /^memory$/i })).toBeInTheDocument();
+  expect(
+    screen.getByText(/considering a steady skill-building path/i)
+  ).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /what i shared/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /delete all memory/i })).toBeInTheDocument();
+});
+
+test('settings also links to Memory', () => {
+  renderApp('/settings');
+  fireEvent.click(screen.getByRole('button', { name: /^open memory$/i }));
+  expect(screen.getByRole('heading', { name: /^memory$/i })).toBeInTheDocument();
+});
 
 test('side panel navigation moves to the services screen', () => {
   renderApp('/');

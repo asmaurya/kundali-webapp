@@ -67,6 +67,20 @@ function SettingsPage({ onBack }) {
         </Box>
 
         <Box className="panel" sx={{ mt: 2.5 }}>
+          <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>Memory</Typography>
+          <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
+            Review remembered details used in chart readings, edit or delete them, and see what you
+            shared with live astrologers.
+          </Typography>
+          <Button
+            onClick={() => navigate('/memory')}
+            sx={{ mt: 2, textTransform: 'none', color: '#B7791F' }}
+          >
+            Open Memory
+          </Button>
+        </Box>
+
+        <Box className="panel" sx={{ mt: 2.5 }}>
           <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>LLM Lab</Typography>
           <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
             Edit the master chat prompt, choose provider and model, capture thinking separately, and
