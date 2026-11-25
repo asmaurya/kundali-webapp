@@ -67,6 +67,6 @@ npx wrangler secret put OPENAI_MODEL      # paste your NIM model id
 
 Optional KV namespace bound as `SETTINGS` makes account sync durable across colos; without it the Worker uses the Cache API best-effort store.
 
-Raspberry Pi Docker deploy ([`DEPLOY.md`](./DEPLOY.md)) is legacy and **not** used for beta testing.
+Raspberry Pi Docker deploy ([`DEPLOY.md`](./DEPLOY.md)) is **disabled** (GitHub Action no longer runs). Production/beta is Cloudflare Workers only.
 
 This repo is the `webapp/` child of [asmaurya/kundali-proj](https://github.com/asmaurya/kundali-proj).
