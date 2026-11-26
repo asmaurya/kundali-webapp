@@ -440,12 +440,13 @@ export function ChatProvider({ children }) {
         const familyCharts = chartIds.includes('family')
           ? familyChartsFromQuestion(trimmed)
           : [];
-        const chartContext = buildLlmChartContext({
-          querentChart: chart,
-          familyCharts,
-          chartIds,
-        });
+        let chartContext = '';
         try {
+          chartContext = buildLlmChartContext({
+            querentChart: chart,
+            familyCharts,
+            chartIds,
+          });
           const result = await askOracle({
             question: trimmed,
             chart,

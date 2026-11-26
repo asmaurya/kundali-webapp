@@ -539,13 +539,7 @@ export function chartContextForPrompt(chart) {
 }
 
 /**
- * Build LLM chart context. When `chartIds` is set (from the topic→chart matrix),
- * only those Kundali views are included. Implementation lives in chartLlmSlices
- * to avoid a circular import with chartViews.
+ * Sync builder used by chat. Webpack resolves the static re-export; do not use
+ * CommonJS require() — it is undefined in the browser bundle and broke replies.
  */
-export function buildLlmChartContext(options = {}) {
-  // Deferred require keeps RASHIS export usable by chartViews at module init.
-  // eslint-disable-next-line global-require
-  const { buildLlmChartContextFromMatrix } = require('./chartLlmSlices');
-  return buildLlmChartContextFromMatrix(options);
-}
+export { buildLlmChartContextFromMatrix as buildLlmChartContext } from './chartLlmSlices';
