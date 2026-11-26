@@ -539,24 +539,13 @@ export function chartContextForPrompt(chart) {
 }
 
 /**
- * Build LLM chart context: querent kundali is ALWAYS included.
- * Optional family charts are appended when mentioned in chat.
+ * Build LLM chart context. When `chartIds` is set (from the topic→chart matrix),
+ * only those Kundali views are included. Implementation lives in chartLlmSlices
+ * to avoid a circular import with chartViews.
  */
-export function buildLlmChartContext({ querentChart, familyCharts = [] } = {}) {
-  const blocks = [];
-  const querent = chartJsonForPrompt(querentChart);
-  if (querent) {
-    blocks.push(`Querent kundali (JSON):\n${JSON.stringify(querent)}`);
-  } else {
-    blocks.push('Querent kundali (JSON): null');
-  }
-
-  (familyCharts || []).forEach((entry) => {
-    const json = chartJsonForPrompt(entry.chart);
-    if (!json) return;
-    const label = entry.label || entry.relation || 'family';
-    blocks.push(`Family kundali — ${label} (JSON):\n${JSON.stringify(json)}`);
-  });
-
-  return blocks.join('\n\n');
+export function buildLlmChartContext(options = {}) {
+  // Deferred require keeps RASHIS export usable by chartViews at module init.
+  // eslint-disable-next-line global-require
+  const { buildLlmChartContextFromMatrix } = require('./chartLlmSlices');
+  return buildLlmChartContextFromMatrix(options);
 }

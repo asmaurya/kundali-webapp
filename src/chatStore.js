@@ -10,6 +10,11 @@ import {
 import { askOracle } from './api';
 import { scriptedReplyFor } from './scriptedReplies';
 import { buildLlmChartContext } from './lib/chartEngine';
+import {
+  chartIdsForTopics,
+  normalizeChartTopicMatrix,
+  topicIdFromLabel,
+} from './lib/chartTopicMatrix';
 import { getSelfProfile, listProfiles } from './lib/profiles';
 import {
   markAstrologerUsed,
@@ -392,7 +397,7 @@ export function ChatProvider({ children }) {
       );
     };
 
-    const sendMessage = async (text, { skipLockedPrefix } = {}) => {
+    const sendMessage = async (text, { skipLockedPrefix, topics = [] } = {}) => {
       if (!active) return;
       const prefix = skipLockedPrefix ? '' : active.lockedPrefix || '';
       const userPart = String(text || '').trim();
@@ -403,6 +408,9 @@ export function ChatProvider({ children }) {
       markAstrologerUsed(astrologer.id);
       const priorMessages = active.messages;
       const wasUntitled = active.title === 'New chat' || !priorMessages.some((m) => m.role === 'user');
+      const topicIds = (Array.isArray(topics) ? topics : [])
+        .map((t) => topicIdFromLabel(t) || t)
+        .filter(Boolean);
 
       setConversations((current) =>
         current.map((conversation) => {
@@ -416,19 +424,27 @@ export function ChatProvider({ children }) {
               : conversation.title,
             updated: 'Just now',
             lockedPrefix: conversation.lockedPrefix || '',
-            messages: [...conversation.messages, { role: 'user', text: trimmed }],
+            messages: [...conversation.messages, { role: 'user', text: trimmed, topics: topicIds }],
           };
         })
       );
 
       let replyText = scriptedReplyFor(trimmed);
+      let botMeta = null;
       if (astrologer.type === 'ai') {
         try {
-          const locale = getSettings()?.locale === 'hi' ? 'hi' : 'en';
+          const settings = getSettings() || {};
+          const locale = settings.locale === 'hi' ? 'hi' : 'en';
           const chart = getChart();
+          const matrix = normalizeChartTopicMatrix(settings.chartTopicMatrix);
+          const chartIds = chartIdsForTopics(matrix, topicIds);
+          const familyCharts = chartIds.includes('family')
+            ? familyChartsFromQuestion(trimmed)
+            : [];
           const chartContext = buildLlmChartContext({
             querentChart: chart,
-            familyCharts: familyChartsFromQuestion(trimmed),
+            familyCharts,
+            chartIds,
           });
           const result = await askOracle({
             question: trimmed,
@@ -439,6 +455,18 @@ export function ChatProvider({ children }) {
             people: peopleForAnonymize(),
           });
           replyText = result.text;
+          botMeta = {
+            provider: result.provider,
+            usage: result.usage || null,
+            thinking: result.thinking || '',
+            model: result.model || null,
+            llmPacket: {
+              ...(result.llmPacket || {}),
+              topics: topicIds,
+              chartIds,
+              chartContext,
+            },
+          };
         } catch {
           // keep scriptedReplyFor
         }
@@ -458,7 +486,14 @@ export function ChatProvider({ children }) {
           return {
             ...conversation,
             updated: 'Just now',
-            messages: [...conversation.messages, { role: 'bot', text: replyText }],
+            messages: [
+              ...conversation.messages,
+              {
+                role: 'bot',
+                text: replyText,
+                ...(botMeta || {}),
+              },
+            ],
           };
         })
       );

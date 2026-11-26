@@ -37,6 +37,12 @@ export function createWorkerAnswerProvider({
       return {
         answer,
         provider: data.provider || ANSWER_PROVIDER_IDS.worker,
+        model: data.model || null,
+        thinking: data.thinking || '',
+        thinkingCaptured: Boolean(data.thinkingCaptured),
+        latencyMs: data.latencyMs || null,
+        llmPacket: data.llmPacket || null,
+        chartInference: data.chartInference || null,
         usage: data.usage || {
           promptTokens: estimateTokens(request),
           completionTokens: Math.ceil(String(answer).length / 4),

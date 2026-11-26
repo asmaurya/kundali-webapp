@@ -647,8 +647,21 @@
   border-radius: 50%;
 }
 
-.msg__bubble {
+.msg__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   max-width: 76%;
+  min-width: 0;
+}
+
+.msg--user .msg__stack {
+  align-items: flex-end;
+}
+
+.msg__bubble {
+  max-width: 100%;
   padding: 11px 15px;
   font-size: 14.5px;
   line-height: 1.55;
@@ -657,6 +670,13 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+.msg__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
 }
 
 .msg__bubble--bot {

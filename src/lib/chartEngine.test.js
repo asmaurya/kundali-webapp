@@ -121,13 +121,21 @@ test('buildLlmChartContext always includes querent JSON and optional family', ()
   expect(json.grahas.length).toBe(9);
 
   const alone = buildLlmChartContext({ querentChart: querent });
-  expect(alone).toMatch(/Querent kundali \(JSON\)/);
+  expect(alone).toMatch(/Querent kundali/);
   expect(alone).not.toMatch(/Family kundali/);
 
   const withFamily = buildLlmChartContext({
     querentChart: querent,
     familyCharts: [{ label: 'Father', chart: father }],
   });
-  expect(withFamily).toMatch(/Querent kundali \(JSON\)/);
+  expect(withFamily).toMatch(/Querent kundali/);
   expect(withFamily).toMatch(/Family kundali — Father \(JSON\)/);
+
+  const matrixOnly = buildLlmChartContext({
+    querentChart: querent,
+    familyCharts: [{ label: 'Father', chart: father }],
+    chartIds: ['lagna', 'navamsa'],
+  });
+  expect(matrixOnly).toMatch(/navamsa/);
+  expect(matrixOnly).not.toMatch(/Family kundali/);
 });

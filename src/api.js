@@ -125,11 +125,30 @@ export async function askOracle({
     /* ignore */
   }
 
+  // Prefer worker packet; otherwise assemble a client-side fallback for download.
+  const llmPacket =
+    result.llmPacket ||
+    {
+      at: new Date().toISOString(),
+      provider: result.provider,
+      model: result.model || null,
+      context: resolvedContext,
+      question,
+      thinking: result.thinking || '',
+      output: result.answer,
+      usage: result.usage || null,
+      latencyMs: result.latencyMs || null,
+      chartInference: result.chartInference || null,
+    };
+
   return {
     text: result.answer,
     provider: result.provider,
     used_llm: result.provider !== 'local-heuristic',
     usage: result.usage,
+    thinking: result.thinking || '',
+    model: result.model || null,
+    llmPacket,
   };
 }
 

@@ -22,9 +22,12 @@ import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import HealthAndSafetyIcon from '@mui/icons-material/HealthAndSafety';
 import SpaIcon from '@mui/icons-material/Spa';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
+import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import { ASTROLOGERS, useChat } from '../chatStore';
 import { useLocale } from '../i18n/LocaleContext';
 import { listProfiles } from '../lib/profiles';
+import { downloadLlmPacket } from '../lib/llmPacketDownload';
+import { topicIdFromLabel } from '../lib/chartTopicMatrix';
 
 /** Free-tier soft nudge: after this many user messages, offer a fresh chat from summary. */
 export const FREE_CHAT_USER_MESSAGE_LIMIT = 5;
@@ -166,7 +169,8 @@ function ChatInterface() {
     const body = composeText();
     if (!body && !lockedPrefix) return;
     stickToBottomRef.current = true;
-    sendMessage(body || '');
+    const topicIds = selectedTopics.map((label) => topicIdFromLabel(label)).filter(Boolean);
+    sendMessage(body || '', { topics: topicIds });
     setDraft('');
     setSelectedTopics([]);
     setSelectedMembers([]);
@@ -469,13 +473,35 @@ function ChatInterface() {
                 {message.role === 'bot' && (
                   <span className="msg__avatar">{astrologer.initials}</span>
                 )}
-                <Box className={`msg__bubble msg__bubble--${message.role === 'user' ? 'user' : 'bot'}`}>
-                  {message.text.split('\n').map((line, lineIndex) => (
-                    <React.Fragment key={lineIndex}>
-                      {lineIndex > 0 && <br />}
-                      {line}
-                    </React.Fragment>
-                  ))}
+                <Box className="msg__stack">
+                  <Box className={`msg__bubble msg__bubble--${message.role === 'user' ? 'user' : 'bot'}`}>
+                    {message.text.split('\n').map((line, lineIndex) => (
+                      <React.Fragment key={lineIndex}>
+                        {lineIndex > 0 && <br />}
+                        {line}
+                      </React.Fragment>
+                    ))}
+                  </Box>
+                  {message.role === 'bot' && message.llmPacket && (
+                    <Box className="msg__actions">
+                      <Tooltip title="Download LLM context, charts, thinking, output & tokens">
+                        <IconButton
+                          size="small"
+                          aria-label="Download LLM packet"
+                          onClick={() =>
+                            downloadLlmPacket(
+                              message.llmPacket,
+                              message.text,
+                              `kundali-llm-${index + 1}`
+                            )
+                          }
+                          sx={{ color: '#6A6580' }}
+                        >
+                          <DownloadOutlinedIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  )}
                 </Box>
               </Box>
             ))}

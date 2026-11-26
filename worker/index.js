@@ -1125,6 +1125,27 @@ async function openAiReply(env, question, chartContext, history, locale, summary
       model: cfg.model,
       usage: reply.usage,
       latencyMs: reply.latencyMs,
+      /** Full packet for per-reply download in the chat UI (includes thinking when captured). */
+      llmPacket: {
+        at: new Date().toISOString(),
+        provider: cfg.provider,
+        model: cfg.model,
+        api: cfg.api,
+        baseUrl: cfg.baseUrl,
+        params,
+        masterPrompt: parts.master,
+        system: parts.system,
+        context: parts.context,
+        question: parts.question,
+        historyTurns: Array.isArray(history) ? history.length : 0,
+        history: normalizeChatHistory(history),
+        request: reply.requestBody || null,
+        thinking: cfg.captureThinking ? reply.thinking || '' : '',
+        output: reply.text,
+        usage: reply.usage || null,
+        latencyMs: reply.latencyMs,
+        finishReason: reply.finishReason || null,
+      },
     };
     if (cfg.captureThinking && reply.thinking) {
       result.thinkingCaptured = true;
@@ -1513,7 +1534,15 @@ async function handleSettings(request, env) {
   }
   if (body.action === 'put') {
     const locale = body.settings?.locale === 'hi' ? 'hi' : 'en';
-    const settings = { locale, updatedAt: new Date().toISOString() };
+    const settings = {
+      locale,
+      updatedAt: new Date().toISOString(),
+    };
+    if (body.settings?.chartTopicMatrix && typeof body.settings.chartTopicMatrix === 'object') {
+      settings.chartTopicMatrix = body.settings.chartTopicMatrix;
+    } else if (existing.settings?.chartTopicMatrix) {
+      settings.chartTopicMatrix = existing.settings.chartTopicMatrix;
+    }
     const saved = await writeAccountStore(env, email, { ...existing, settings });
     return json({ ok: true, settings: saved.settings });
   }

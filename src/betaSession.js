@@ -119,12 +119,20 @@ export function saveFamilyMembers(members) {
 }
 
 export function getSettings() {
-  return readJson(STORAGE_KEYS.settings, { locale: 'en' });
+  const raw = readJson(STORAGE_KEYS.settings, { locale: 'en' });
+  return {
+    locale: raw?.locale === 'hi' ? 'hi' : 'en',
+    chartTopicMatrix: raw?.chartTopicMatrix || null,
+    updatedAt: raw?.updatedAt || null,
+  };
 }
 
 export function saveSettings(settings) {
+  const prev = getSettings();
   const next = {
-    locale: settings?.locale === 'hi' ? 'hi' : 'en',
+    locale: settings?.locale === 'hi' ? 'hi' : settings?.locale === 'en' ? 'en' : prev.locale,
+    chartTopicMatrix:
+      settings?.chartTopicMatrix !== undefined ? settings.chartTopicMatrix : prev.chartTopicMatrix,
     updatedAt: new Date().toISOString(),
   };
   writeJson(STORAGE_KEYS.settings, next);

@@ -23,7 +23,7 @@ compatibility_date = "2025-11-01"
 [vars]
 OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
 OPENAI_MODEL = "nvidia/nemotron-3.5-bolt-e4b"
-WORKER_BUILD = "answer-pipeline-modes"
+WORKER_BUILD = "llm-packet-chart-matrix"
 CHART_API_URL = "https://kundali-chart-api.vercel.app"
 # Override in dashboard or via `wrangler secret put MASTER_PROMPT` for a longer prompt.
 MASTER_PROMPT = "Ground every answer in the querent kundali JSON provided in context. When a family kundali JSON is also present, compare both charts and state which placements support the reading. Prefer precise Jyotish references (lagna, houses, grahas, dasha) over generic advice."
