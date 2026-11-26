@@ -78,8 +78,18 @@ const DEFAULT_PROVIDER_PROFILE = {
   thinkingEffort: 'high',
 };
 
+/**
+ * Answer pipeline modes:
+ * - llm_only: skip inference; call configured LLM only
+ * - inference_then_llm: call inference, append into chart context, then LLM
+ * - inference_only: call inference (may be an LLM itself); skip our LLM
+ */
+const CHART_PIPELINE_MODES = ['llm_only', 'inference_then_llm', 'inference_only'];
+
 const DEFAULT_CHART_INFERENCE = {
+  /** @deprecated prefer `mode`; kept for older saved Lab configs */
   enabled: false,
+  mode: 'llm_only',
   baseUrl: '',
   method: 'POST',
   /** JSON object string; values may use {{var}} and {{secret.NAME}} */
@@ -88,11 +98,14 @@ const DEFAULT_CHART_INFERENCE = {
    * Request body template. Placeholders map from chart/birth vars, e.g.
    * {{birth.date}} {{birth.time}} {{birth.lat}} {{birth.lon}} {{birth.tz}}
    * {{birth.place}} {{chart.lagna}} {{chart.moonSign}} {{chart.dasha}}
+   * {{question}} {{locale}} {{summary}}
    */
   bodyTemplate:
-    '{\n  "date": "{{birth.date}}",\n  "time": "{{birth.time}}",\n  "lat": {{birth.lat}},\n  "lon": {{birth.lon}},\n  "tz": "{{birth.tz}}",\n  "place": "{{birth.place}}"\n}',
-  /** Dot path into JSON response to append; empty = whole JSON body */
+    '{\n  "date": "{{birth.date}}",\n  "time": "{{birth.time}}",\n  "lat": {{birth.lat}},\n  "lon": {{birth.lon}},\n  "tz": "{{birth.tz}}",\n  "place": "{{birth.place}}",\n  "question": "{{question}}"\n}',
+  /** Dot path into JSON response to append (inference_then_llm); empty = whole JSON body */
   responseJsonPath: '',
+  /** Dot path for the reply text when mode is inference_only; falls back to responseJsonPath / common keys */
+  answerJsonPath: '',
   /** Optional Cloudflare secret name referenced as {{secret.<name>}} in headers/body */
   secretName: 'CHART_INFERENCE_KEY',
 };
@@ -185,10 +198,20 @@ function syncFlatFromProfile(lab, providerId, profile) {
   return next;
 }
 
+function resolveChartPipelineMode(raw) {
+  const explicit = String(raw?.mode || '').trim().toLowerCase();
+  if (CHART_PIPELINE_MODES.includes(explicit)) return explicit;
+  // Legacy: enabled true → inference before LLM
+  if (raw && raw.enabled === true) return 'inference_then_llm';
+  return 'llm_only';
+}
+
 function sanitizeChartInference(raw) {
   const base = { ...DEFAULT_CHART_INFERENCE, ...(raw && typeof raw === 'object' ? raw : {}) };
+  const mode = resolveChartPipelineMode(base);
   return {
-    enabled: Boolean(base.enabled),
+    enabled: mode !== 'llm_only',
+    mode,
     baseUrl: String(base.baseUrl || '')
       .trim()
       .replace(/\/$/, '')
@@ -197,11 +220,32 @@ function sanitizeChartInference(raw) {
     headersJson: String(base.headersJson || DEFAULT_CHART_INFERENCE.headersJson).slice(0, 4000),
     bodyTemplate: String(base.bodyTemplate || DEFAULT_CHART_INFERENCE.bodyTemplate).slice(0, 12000),
     responseJsonPath: String(base.responseJsonPath || '').trim().slice(0, 200),
+    answerJsonPath: String(base.answerJsonPath || '').trim().slice(0, 200),
     secretName: String(base.secretName || 'CHART_INFERENCE_KEY')
       .trim()
       .replace(/[^A-Za-z0-9_]/g, '_')
       .slice(0, 64),
   };
+}
+
+function extractInferenceAnswerText(parsed, cfg) {
+  const path = cfg.answerJsonPath || cfg.responseJsonPath || '';
+  if (path) {
+    const at = valueAtPath(parsed, path);
+    if (typeof at === 'string' && at.trim()) return at.trim();
+    if (at != null && typeof at !== 'object') return String(at);
+  }
+  if (typeof parsed === 'string') return parsed.trim();
+  if (!parsed || typeof parsed !== 'object') return '';
+  for (const key of ['answer', 'text', 'message', 'reply', 'content', 'output']) {
+    const v = parsed[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (v && typeof v === 'object' && typeof v.text === 'string' && v.text.trim()) return v.text.trim();
+  }
+  // OpenAI-compat choices
+  const choiceText = parsed.choices?.[0]?.message?.content;
+  if (typeof choiceText === 'string' && choiceText.trim()) return choiceText.trim();
+  return '';
 }
 
 function slugifyProviderId(label) {
@@ -1255,24 +1299,36 @@ function buildChartInferenceVars(chartVars, env, secretName) {
 }
 
 /**
- * Optional third-party chart/Jyotish inference call using Lab template mapping.
- * Returns enriched chartContext string (original + inference JSON).
+ * Optional third-party chart/Jyotish (or inference-LLM) call using Lab template mapping.
+ * mode llm_only → no-op; inference_then_llm → enrich context; inference_only → answer text.
  */
-async function enrichChartContextWithInference(env, lab, chartContext, chartVars) {
+async function runChartInference(env, lab, { chartContext, chartVars, question, locale, summary }) {
   const cfg = sanitizeChartInference(lab?.chartInference);
-  if (!cfg.enabled || !cfg.baseUrl) {
-    return { chartContext, inference: null };
+  if (cfg.mode === 'llm_only') {
+    return { mode: cfg.mode, chartContext, answerText: null, inference: null };
+  }
+  if (!cfg.baseUrl) {
+    return { mode: cfg.mode, chartContext, answerText: null, inference: { error: 'missing_base_url' } };
   }
   if (!/^https?:\/\//i.test(cfg.baseUrl)) {
-    return { chartContext, inference: { error: 'invalid_base_url' } };
+    return { mode: cfg.mode, chartContext, answerText: null, inference: { error: 'invalid_base_url' } };
   }
 
-  const vars = buildChartInferenceVars(chartVars, env, cfg.secretName);
+  const vars = buildChartInferenceVars(
+    {
+      ...(chartVars && typeof chartVars === 'object' ? chartVars : {}),
+      question: question || '',
+      locale: locale || 'en',
+      summary: summary || '',
+    },
+    env,
+    cfg.secretName
+  );
   let headers = {};
   try {
     headers = JSON.parse(renderTemplate(cfg.headersJson || '{}', vars));
   } catch {
-    return { chartContext, inference: { error: 'invalid_headers_json' } };
+    return { mode: cfg.mode, chartContext, answerText: null, inference: { error: 'invalid_headers_json' } };
   }
   if (!headers || typeof headers !== 'object') headers = {};
 
@@ -1307,25 +1363,45 @@ async function enrichChartContextWithInference(env, lab, chartContext, chartVars
     try {
       parsed = JSON.parse(raw);
     } catch {
-      parsed = { raw: raw.slice(0, 4000) };
+      parsed = raw;
     }
     if (!response.ok) {
       return {
+        mode: cfg.mode,
         chartContext,
-        inference: { error: `chart_inference_${response.status}`, detail: raw.slice(0, 400) },
+        answerText: null,
+        inference: { error: `chart_inference_${response.status}`, detail: String(raw).slice(0, 400) },
       };
     }
-    const extracted = valueAtPath(parsed, cfg.responseJsonPath);
+
+    if (cfg.mode === 'inference_only') {
+      const answerText =
+        extractInferenceAnswerText(parsed, cfg) ||
+        (typeof parsed === 'string' ? parsed.trim() : JSON.stringify(parsed).slice(0, 8000));
+      return {
+        mode: cfg.mode,
+        chartContext,
+        answerText,
+        inference: { ok: true, status: response.status, mode: cfg.mode, bytes: answerText.length },
+      };
+    }
+
+    // inference_then_llm — append into chart context for the Lab LLM
+    const extracted = valueAtPath(typeof parsed === 'object' ? parsed : { raw: parsed }, cfg.responseJsonPath);
     const snippet =
       typeof extracted === 'string' ? extracted : JSON.stringify(extracted ?? parsed, null, 0);
     const enriched = `${chartContext || ''}\n\nExternal chart inference (JSON):\n${String(snippet).slice(0, 8000)}`;
     return {
+      mode: cfg.mode,
       chartContext: enriched,
-      inference: { ok: true, status: response.status, bytes: snippet.length },
+      answerText: null,
+      inference: { ok: true, status: response.status, mode: cfg.mode, bytes: String(snippet).length },
     };
   } catch (error) {
     return {
+      mode: cfg.mode,
       chartContext,
+      answerText: null,
       inference: { error: String(error?.message || error).slice(0, 240) },
     };
   }
@@ -1348,14 +1424,51 @@ async function handleChat(request, env) {
   // Prefer client-assembled history (already windowed + anonymised); fall back to raw.
   const history = Array.isArray(body.history) ? body.history : [];
   const lab = await readLlmLab(env);
-  const enriched = await enrichChartContextWithInference(env, lab, chartContext, body.chartVars || body.birth);
-  chartContext = enriched.chartContext;
+  const pipeline = await runChartInference(env, lab, {
+    chartContext,
+    chartVars: body.chartVars || body.birth,
+    question,
+    locale,
+    summary,
+  });
+  chartContext = pipeline.chartContext;
+
+  // Mode: inference provider is the answer (often an LLM of its own) — skip Lab LLM.
+  if (pipeline.mode === 'inference_only') {
+    if (pipeline.answerText) {
+      return json({
+        text: finalizeAssistantText(pipeline.answerText),
+        provider: 'chart-inference',
+        used_llm: false,
+        used_inference: true,
+        chartInference: pipeline.inference || undefined,
+        usage: {
+          modelTier: body.modelTier || 'flash',
+          anonymousId: body.anonymousId || '',
+        },
+      });
+    }
+    return json({
+      text: chartAwareFallback(question, chartContext, locale),
+      provider: 'chart-inference-fallback',
+      used_llm: false,
+      used_inference: true,
+      chartInference: pipeline.inference || undefined,
+      warning: pipeline.inference?.error || 'inference_empty_answer',
+      usage: {
+        modelTier: body.modelTier || 'flash',
+        anonymousId: body.anonymousId || '',
+      },
+    });
+  }
+
   try {
     const llm = await openAiReply(env, question, chartContext, history, locale, summary, lab);
     if (llm) {
       return json({
         ...llm,
-        chartInference: enriched.inference || undefined,
+        used_inference: pipeline.mode === 'inference_then_llm',
+        chartInference: pipeline.inference || undefined,
         usage: {
           ...(llm.usage || {}),
           modelTier: body.modelTier || 'flash',
@@ -1368,7 +1481,8 @@ async function handleChat(request, env) {
       text: chartAwareFallback(question, chartContext, locale),
       provider: 'chart-fallback',
       used_llm: false,
-      chartInference: enriched.inference || undefined,
+      used_inference: pipeline.mode === 'inference_then_llm',
+      chartInference: pipeline.inference || undefined,
       warning: String(error.message || error),
     });
   }
@@ -1377,6 +1491,7 @@ async function handleChat(request, env) {
     text: chartAwareFallback(question, chartContext, locale),
     provider: 'chart-local',
     used_llm: false,
+    used_inference: pipeline.mode === 'inference_then_llm',
     usage: {
       modelTier: body.modelTier || 'flash',
       anonymousId: body.anonymousId || '',

@@ -69,14 +69,41 @@ const emptyForm = {
 
 const emptyChartInference = {
   enabled: false,
+  mode: 'llm_only',
   baseUrl: '',
   method: 'POST',
   headersJson: '{\n  "Content-Type": "application/json"\n}',
   bodyTemplate:
-    '{\n  "date": "{{birth.date}}",\n  "time": "{{birth.time}}",\n  "lat": {{birth.lat}},\n  "lon": {{birth.lon}},\n  "tz": "{{birth.tz}}",\n  "place": "{{birth.place}}"\n}',
+    '{\n  "date": "{{birth.date}}",\n  "time": "{{birth.time}}",\n  "lat": {{birth.lat}},\n  "lon": {{birth.lon}},\n  "tz": "{{birth.tz}}",\n  "place": "{{birth.place}}",\n  "question": "{{question}}"\n}',
   responseJsonPath: '',
+  answerJsonPath: '',
   secretName: 'CHART_INFERENCE_KEY',
 };
+
+const PIPELINE_MODE_OPTIONS = [
+  {
+    value: 'llm_only',
+    label: 'LLM only',
+    help: 'Skip inference. Answer with the Lab LLM only.',
+  },
+  {
+    value: 'inference_then_llm',
+    label: 'Inference → LLM',
+    help: 'Call the inference API first, append its result into chart context, then call the Lab LLM.',
+  },
+  {
+    value: 'inference_only',
+    label: 'Inference only (no Lab LLM)',
+    help: 'Call the inference API (it may be an LLM itself) and use its reply as the chat answer. Lab LLM is not called.',
+  },
+];
+
+function normalizePipelineMode(cfg) {
+  const mode = String(cfg?.mode || '').trim();
+  if (PIPELINE_MODE_OPTIONS.some((o) => o.value === mode)) return mode;
+  if (cfg?.enabled) return 'inference_then_llm';
+  return 'llm_only';
+}
 
 function pickProviderParams(form) {
   return {
@@ -248,7 +275,12 @@ function LlmLabPage({ onBack }) {
     setAddingCustom(false);
     const profiles = lab.providerProfiles && typeof lab.providerProfiles === 'object' ? lab.providerProfiles : {};
     setProviderProfiles(profiles);
-    setChartInference({ ...emptyChartInference, ...(lab.chartInference || {}) });
+    {
+      const ci = { ...emptyChartInference, ...(lab.chartInference || {}) };
+      ci.mode = normalizePipelineMode(ci);
+      ci.enabled = ci.mode !== 'llm_only';
+      setChartInference(ci);
+    }
     setForm({
       masterPrompt: lab.masterPrompt || '',
       provider: lab.provider || 'nvidia',
@@ -810,27 +842,42 @@ function LlmLabPage({ onBack }) {
 
         <Box className="panel" sx={{ mt: 2.5, display: 'grid', gap: 1.5 }}>
           <Typography component="h3" sx={{ fontWeight: 700, color: '#1E1B2E', fontSize: 18 }}>
-            Chart inference connector
+            Answer pipeline &amp; chart inference
           </Typography>
           <Typography sx={{ fontSize: 13, color: '#4A4560' }}>
-            Optional third-party chart/Jyotish API. Map birth and chart fields into a custom JSON
-            body with <code>{'{{birth.date}}'}</code>, <code>{'{{birth.time}}'}</code>,{' '}
+            Choose how chat answers are produced. Map birth/chart fields with{' '}
+            <code>{'{{birth.date}}'}</code>, <code>{'{{birth.time}}'}</code>,{' '}
             <code>{'{{birth.lat}}'}</code>, <code>{'{{birth.lon}}'}</code>,{' '}
             <code>{'{{birth.tz}}'}</code>, <code>{'{{birth.place}}'}</code>,{' '}
             <code>{'{{chart.lagna}}'}</code>, <code>{'{{chart.moonSign}}'}</code>,{' '}
-            <code>{'{{chart.dasha}}'}</code>. Secrets: <code>{'{{secret.NAME}}'}</code> (Cloudflare
-            secret). The response is appended into the LLM chart context.
+            <code>{'{{chart.dasha}}'}</code>, <code>{'{{question}}'}</code>,{' '}
+            <code>{'{{locale}}'}</code>. Secrets: <code>{'{{secret.NAME}}'}</code>.
           </Typography>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={Boolean(chartInference.enabled)}
-                onChange={(e) => patchChart('enabled', e.target.checked)}
-                color="secondary"
-              />
+          <TextField
+            select
+            label="Pipeline mode"
+            size="small"
+            value={normalizePipelineMode(chartInference)}
+            onChange={(e) => {
+              const mode = e.target.value;
+              setChartInference((prev) => ({
+                ...prev,
+                mode,
+                enabled: mode !== 'llm_only',
+              }));
+            }}
+            fullWidth
+            helperText={
+              PIPELINE_MODE_OPTIONS.find((o) => o.value === normalizePipelineMode(chartInference))
+                ?.help
             }
-            label="Call chart inference API before each LLM answer"
-          />
+          >
+            {PIPELINE_MODE_OPTIONS.map((opt) => (
+              <MenuItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </MenuItem>
+            ))}
+          </TextField>
           <TextField
             label="Inference API URL"
             size="small"
@@ -838,7 +885,7 @@ function LlmLabPage({ onBack }) {
             onChange={(e) => patchChart('baseUrl', e.target.value)}
             fullWidth
             placeholder="https://api.example.com/v1/chart"
-            disabled={!chartInference.enabled}
+            disabled={normalizePipelineMode(chartInference) === 'llm_only'}
           />
           <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
             <TextField
@@ -847,7 +894,7 @@ function LlmLabPage({ onBack }) {
               size="small"
               value={chartInference.method || 'POST'}
               onChange={(e) => patchChart('method', e.target.value)}
-              disabled={!chartInference.enabled}
+              disabled={normalizePipelineMode(chartInference) === 'llm_only'}
             >
               <MenuItem value="POST">POST</MenuItem>
               <MenuItem value="GET">GET</MenuItem>
@@ -857,7 +904,7 @@ function LlmLabPage({ onBack }) {
               size="small"
               value={chartInference.secretName || ''}
               onChange={(e) => patchChart('secretName', e.target.value)}
-              disabled={!chartInference.enabled}
+              disabled={normalizePipelineMode(chartInference) === 'llm_only'}
               helperText="Referenced as {{secret.<name>}} in headers/body"
             />
           </Box>
@@ -869,7 +916,7 @@ function LlmLabPage({ onBack }) {
             fullWidth
             multiline
             minRows={3}
-            disabled={!chartInference.enabled}
+            disabled={normalizePipelineMode(chartInference) === 'llm_only'}
             sx={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
           />
           <TextField
@@ -880,17 +927,26 @@ function LlmLabPage({ onBack }) {
             fullWidth
             multiline
             minRows={5}
-            disabled={!chartInference.enabled}
+            disabled={normalizePipelineMode(chartInference) === 'llm_only'}
             sx={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
           />
           <TextField
-            label="Response JSON path (optional)"
+            label="Context JSON path (Inference → LLM)"
             size="small"
             value={chartInference.responseJsonPath}
             onChange={(e) => patchChart('responseJsonPath', e.target.value)}
             fullWidth
-            disabled={!chartInference.enabled}
-            helperText="e.g. data.chart — empty uses the whole response body"
+            disabled={normalizePipelineMode(chartInference) !== 'inference_then_llm'}
+            helperText="Slice of the inference response appended into LLM chart context (e.g. data.chart)"
+          />
+          <TextField
+            label="Answer JSON path (Inference only)"
+            size="small"
+            value={chartInference.answerJsonPath}
+            onChange={(e) => patchChart('answerJsonPath', e.target.value)}
+            fullWidth
+            disabled={normalizePipelineMode(chartInference) !== 'inference_only'}
+            helperText="Where the reply text lives (e.g. answer or choices.0.message.content). Empty auto-detects common keys."
           />
         </Box>
 
