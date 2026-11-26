@@ -432,20 +432,20 @@ export function ChatProvider({ children }) {
       let replyText = scriptedReplyFor(trimmed);
       let botMeta = null;
       if (astrologer.type === 'ai') {
+        const settings = getSettings() || {};
+        const locale = settings.locale === 'hi' ? 'hi' : 'en';
+        const chart = getChart();
+        const matrix = normalizeChartTopicMatrix(settings.chartTopicMatrix);
+        const chartIds = chartIdsForTopics(matrix, topicIds);
+        const familyCharts = chartIds.includes('family')
+          ? familyChartsFromQuestion(trimmed)
+          : [];
+        const chartContext = buildLlmChartContext({
+          querentChart: chart,
+          familyCharts,
+          chartIds,
+        });
         try {
-          const settings = getSettings() || {};
-          const locale = settings.locale === 'hi' ? 'hi' : 'en';
-          const chart = getChart();
-          const matrix = normalizeChartTopicMatrix(settings.chartTopicMatrix);
-          const chartIds = chartIdsForTopics(matrix, topicIds);
-          const familyCharts = chartIds.includes('family')
-            ? familyChartsFromQuestion(trimmed)
-            : [];
-          const chartContext = buildLlmChartContext({
-            querentChart: chart,
-            familyCharts,
-            chartIds,
-          });
           const result = await askOracle({
             question: trimmed,
             chart,
@@ -462,13 +462,41 @@ export function ChatProvider({ children }) {
             model: result.model || null,
             llmPacket: {
               ...(result.llmPacket || {}),
+              at: result.llmPacket?.at || new Date().toISOString(),
               topics: topicIds,
               chartIds,
               chartContext,
+              context: result.llmPacket?.context || chartContext,
+              question: result.llmPacket?.question || trimmed,
+              output: result.llmPacket?.output || result.text,
+              thinking: result.llmPacket?.thinking || result.thinking || '',
+              usage: result.llmPacket?.usage || result.usage || null,
+              provider: result.provider,
+              model: result.model || null,
             },
           };
-        } catch {
-          // keep scriptedReplyFor
+        } catch (error) {
+          // Scripted fallback still gets a downloadable packet so the control is visible.
+          botMeta = {
+            provider: 'local-scripted',
+            usage: null,
+            thinking: '',
+            model: null,
+            llmPacket: {
+              at: new Date().toISOString(),
+              provider: 'local-scripted',
+              topics: topicIds,
+              chartIds,
+              chartContext,
+              context: chartContext,
+              question: trimmed,
+              thinking: '',
+              output: replyText,
+              usage: null,
+              error: String(error?.message || error).slice(0, 400),
+              note: 'LLM call failed; this packet is the local scripted fallback plus the chart context that would have been sent.',
+            },
+          };
         }
       }
 

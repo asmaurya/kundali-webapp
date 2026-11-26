@@ -484,10 +484,12 @@ function ChatInterface() {
                   </Box>
                   {message.role === 'bot' && message.llmPacket && (
                     <Box className="msg__actions">
-                      <Tooltip title="Download LLM context, charts, thinking, output & tokens">
-                        <IconButton
+                      <Tooltip title="Download full LLM packet: context, charts JSON, thinking, output, tokens">
+                        <Button
                           size="small"
-                          aria-label="Download LLM packet"
+                          variant="text"
+                          startIcon={<DownloadOutlinedIcon sx={{ fontSize: 16 }} />}
+                          aria-label="Download raw LLM packet"
                           onClick={() =>
                             downloadLlmPacket(
                               message.llmPacket,
@@ -495,10 +497,18 @@ function ChatInterface() {
                               `kundali-llm-${index + 1}`
                             )
                           }
-                          sx={{ color: '#6A6580' }}
+                          sx={{
+                            textTransform: 'none',
+                            color: '#5B3FA0',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            minHeight: 32,
+                            px: 0.75,
+                            '&:hover': { bgcolor: '#F3EEF9' },
+                          }}
                         >
-                          <DownloadOutlinedIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
+                          Download raw
+                        </Button>
                       </Tooltip>
                     </Box>
                   )}
