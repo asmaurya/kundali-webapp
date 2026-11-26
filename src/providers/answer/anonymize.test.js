@@ -33,11 +33,27 @@ test('anonymizeChartContext keeps birth place, time and chart for Jyotish', () =
 test('names in chart labels are scrubbed but birth stamp remains', () => {
   const raw =
     'Family chart — Ramesh Sharma (Father):\nBirth: 1962-03-12 06:15 at Jaipur\nLagna: Simha';
-  const out = anonymizeText(raw, {
+  const out = anonymizeChartContext(raw, {
     family: [{ name: 'Ramesh Sharma', relation: 'Father' }],
   });
   expect(out).not.toMatch(/Ramesh/i);
   expect(out.toLowerCase()).toContain("the querent's father");
   expect(out).toContain('Jaipur');
   expect(out).toContain('1962-03-12');
+});
+
+test('single-letter selfName must not corrupt chart JSON letters', () => {
+  const chart = '{"ayanamsa":"lahiri","lagna":{"rashi":"Pisces"},"grahas":[{"name":"Rahu"}]}';
+  const out = anonymizeText(chart, { selfName: 'A' });
+  expect(out).toBe(chart);
+  expect(out).not.toMatch(/the querent/);
+  const chartScrub = anonymizeChartContext(chart, { selfName: 'A' });
+  expect(chartScrub).toBe(chart);
+});
+
+test('short names only match whole words', () => {
+  const out = anonymizeText('Ask Ali about lagna and Rahu', { selfName: 'Ali' });
+  expect(out.toLowerCase()).toContain('the querent');
+  expect(out).toMatch(/lagna/);
+  expect(out).toMatch(/Rahu/);
 });

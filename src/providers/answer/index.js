@@ -40,7 +40,9 @@ export async function askWithPrivacy({
   fallback = localAnswerProvider,
 }) {
   const safeQuestion = anonymizeText(question, people);
-  const safeChart = anonymizeChartContext(anonymizeText(chartContext, people));
+  // Chart JSON must not go through email/phone regexes that can mangle numbers;
+  // only scrub whole-word personal names (never single-letter tokens).
+  const safeChart = anonymizeChartContext(chartContext, people);
   const safeMessages = messages.map((m) => ({
     ...m,
     text: anonymizeText(m.text, people),

@@ -3,6 +3,9 @@
  *
  * Keep for Jyotish: birth date, time, place, lat/lon, chart placements, query text.
  * Scrub only what links a reply to a real person: display names, emails, phones.
+ *
+ * Never replace single-letter / tiny tokens — that used to turn every "a" in chart
+ * JSON into "the querent" when the querent display name was "A".
  */
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
@@ -11,6 +14,9 @@ const PHONE_RE =
   /(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)\d{3,5}[\s-]?\d{4,6}\b/g;
 const ISO_DATE_RE = /\b\d{4}-\d{2}-\d{2}\b/g;
 const CLOCK_RE = /\b\d{1,2}:\d{2}(?::\d{2})?\b/g;
+
+/** Minimum characters for a name token to be replaced (avoids wiping "a"/"I"). */
+export const MIN_NAME_LENGTH = 2;
 
 function protectJyotishStamps(text, store) {
   return String(text || '')
@@ -34,6 +40,37 @@ function restoreJyotishStamps(text, store) {
   return out;
 }
 
+function collectNameReplacements(people = {}) {
+  const replacements = [];
+  const selfName = String(people.selfName || '').trim();
+  if (selfName.length >= MIN_NAME_LENGTH) {
+    replacements.push({ from: selfName, to: 'the querent' });
+  }
+  (people.family || []).forEach((member) => {
+    const name = String(member?.name || '').trim();
+    if (name.length < MIN_NAME_LENGTH) return;
+    const relation = String(member.relation || 'relative').toLowerCase();
+    replacements.push({
+      from: name,
+      to: `the querent's ${relation}`,
+    });
+  });
+  // Longer names first so "Ramesh Sharma" wins over "Ramesh".
+  return replacements.sort((a, b) => b.from.length - a.from.length);
+}
+
+function applyNameReplacements(text, replacements) {
+  let out = text;
+  replacements.forEach(({ from, to }) => {
+    const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Always use word boundaries so short names cannot match inside "lagna", "Rahu", etc.
+    const re = new RegExp(`\\b${escaped}\\b`, 'gi');
+    out = out.replace(re, to);
+    out = out.replace(new RegExp(`@${escaped}\\b`, 'gi'), to);
+  });
+  return out;
+}
+
 /**
  * @param {string} text
  * @param {{ selfName?: string, family?: Array<{name:string,relation:string}> }} [people]
@@ -43,42 +80,20 @@ export function anonymizeText(text, people = {}) {
   let out = protectJyotishStamps(text, stamps);
   out = out.replace(EMAIL_RE, '[email]');
   out = out.replace(PHONE_RE, '[phone]');
-
-  const replacements = [];
-  if (people.selfName) {
-    replacements.push({
-      from: people.selfName,
-      to: 'the querent',
-    });
-  }
-  (people.family || []).forEach((member) => {
-    if (!member?.name) return;
-    const relation = String(member.relation || 'relative').toLowerCase();
-    replacements.push({
-      from: member.name,
-      to: `the querent's ${relation}`,
-    });
-  });
-
-  // Longer names first so "Ramesh Sharma" wins over "Ramesh".
-  replacements
-    .sort((a, b) => b.from.length - a.from.length)
-    .forEach(({ from, to }) => {
-      const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      out = out.replace(new RegExp(escaped, 'gi'), to);
-      out = out.replace(new RegExp(`@${escaped}`, 'gi'), to);
-    });
-
+  out = applyNameReplacements(out, collectNameReplacements(people));
   return restoreJyotishStamps(out, stamps);
 }
 
 /**
  * Chart / birth context for the model.
  * Does NOT redact place, time, date, or coordinates — those are required for Jyotish.
- * Names in the blob should already be handled via anonymizeText(..., people).
+ * Only whole-word personal names (length ≥ MIN_NAME_LENGTH) are scrubbed.
  */
-export function anonymizeChartContext(chartContext) {
-  return String(chartContext || '');
+export function anonymizeChartContext(chartContext, people = {}) {
+  const stamps = [];
+  let out = protectJyotishStamps(chartContext, stamps);
+  out = applyNameReplacements(out, collectNameReplacements(people));
+  return restoreJyotishStamps(out, stamps);
 }
 
 export function makeAnonymousRequestId() {

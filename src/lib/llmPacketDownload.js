@@ -19,6 +19,10 @@ function pretty(value) {
 
 export function formatLlmPacketText(packet = {}, fallbackOutput = '') {
   const p = packet || {};
+  // Prefer split systemInstructions + context (one chart copy). Fall back to legacy `system`.
+  const systemBlock = p.systemInstructions || '';
+  const legacySystem = p.system || '';
+  const chartBlock = p.context || p.chartContext || '';
   const parts = [
     section('META', pretty({
       at: p.at || new Date().toISOString(),
@@ -33,8 +37,14 @@ export function formatLlmPacketText(packet = {}, fallbackOutput = '') {
     })),
     section('PARAMS', pretty(p.params || null)),
     section('MASTER_PROMPT', p.masterPrompt || ''),
-    section('SYSTEM', p.system || ''),
-    section('CHART_CONTEXT_AND_JSON', p.context || p.chartContext || ''),
+    section(
+      'SYSTEM_INSTRUCTIONS',
+      systemBlock ||
+        (legacySystem && chartBlock && legacySystem.includes(chartBlock)
+          ? legacySystem.replace(chartBlock, '[chart context shown once in CHART_CONTEXT_AND_JSON below]')
+          : legacySystem)
+    ),
+    section('CHART_CONTEXT_AND_JSON', chartBlock),
     section('QUESTION', p.question || ''),
     section('HISTORY', pretty(p.history || [])),
     section('REQUEST_BODY_SANITIZED', pretty(p.request || null)),
@@ -42,7 +52,7 @@ export function formatLlmPacketText(packet = {}, fallbackOutput = '') {
     section('OUTPUT', p.output || fallbackOutput || ''),
     section('TOKEN_USAGE', pretty(p.usage || null)),
     section('CHART_INFERENCE', pretty(p.chartInference || null)),
-    section('ERROR', p.error || p.note || ''),
+    section('NOTES', p.note || p.error || ''),
   ];
   return parts.join('\n');
 }

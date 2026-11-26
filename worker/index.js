@@ -836,6 +836,7 @@ function buildPromptParts(env, lab, question, chartContext, locale, summary, cfg
     ? 'If you reason internally, keep that separate from the user-facing answer. The answer content must be the final reading only.'
     : 'Do not include chain-of-thought; output only the final user-facing answer.';
   const master = masterPrompt(env, lab);
+  // Chart + rolling summary once (not also re-embedded elsewhere in the user turn).
   const context = [
     `Kundali + context (querent JSON is always present; family JSON only when relevant):\n${chartContext || 'No chart provided.'}`,
     summary
@@ -844,11 +845,21 @@ function buildPromptParts(env, lab, question, chartContext, locale, summary, cfg
   ]
     .filter(Boolean)
     .join('\n\n');
-  const system = [TONE, langLine, thinkingInstruction, `Master prompt:\n${master}`, context]
+  const systemInstructions = [TONE, langLine, thinkingInstruction, `Master prompt:\n${master}`]
     .filter(Boolean)
     .join('\n\n');
+  // Live API: instructions + chart in one system message (single copy of the chart).
+  const system = [systemInstructions, context].filter(Boolean).join('\n\n');
   const userQuestion = `${question}\n\n(Reply with the final answer only — one short reading, no planning.)`;
-  return { master, context, question: userQuestion, system, langLine, thinkingInstruction };
+  return {
+    master,
+    context,
+    systemInstructions,
+    question: userQuestion,
+    system,
+    langLine,
+    thinkingInstruction,
+  };
 }
 
 function usageFromPayload(payload) {
@@ -1125,7 +1136,11 @@ async function openAiReply(env, question, chartContext, history, locale, summary
       model: cfg.model,
       usage: reply.usage,
       latencyMs: reply.latencyMs,
-      /** Full packet for per-reply download in the chat UI (includes thinking when captured). */
+      /**
+       * Packet for chat "Download raw". Chart/summary appear once under `context`
+       * (not duplicated inside `systemInstructions`). The live API still sends a
+       * single combined system message — chart is not posted twice upstream.
+       */
       llmPacket: {
         at: new Date().toISOString(),
         provider: cfg.provider,
@@ -1134,7 +1149,7 @@ async function openAiReply(env, question, chartContext, history, locale, summary
         baseUrl: cfg.baseUrl,
         params,
         masterPrompt: parts.master,
-        system: parts.system,
+        systemInstructions: parts.systemInstructions,
         context: parts.context,
         question: parts.question,
         historyTurns: Array.isArray(history) ? history.length : 0,
@@ -1145,6 +1160,7 @@ async function openAiReply(env, question, chartContext, history, locale, summary
         usage: reply.usage || null,
         latencyMs: reply.latencyMs,
         finishReason: reply.finishReason || null,
+        note: 'Chart JSON is included once under CHART_CONTEXT (also the only chart copy in the API system message). History is prior turns only.',
       },
     };
     if (cfg.captureThinking && reply.thinking) {

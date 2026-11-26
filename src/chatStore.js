@@ -467,9 +467,11 @@ export function ChatProvider({ children }) {
               at: packet.at || new Date().toISOString(),
               topics: topicIds,
               chartIds,
-              chartContext,
-              // Prefer the real chart JSON we assembled locally (never drop it).
-              context: chartContext || packet.context || '',
+              // One chart copy: prefer worker context (already anonymised); else local.
+              context: packet.context || chartContext || '',
+              chartContext: undefined,
+              system: undefined,
+              systemInstructions: packet.systemInstructions || packet.system || '',
               question: packet.question || trimmed,
               history: packet.history?.length
                 ? packet.history
@@ -482,6 +484,9 @@ export function ChatProvider({ children }) {
               usage: packet.usage || result.usage || null,
               provider: result.provider,
               model: result.model || packet.model || null,
+              note:
+                packet.note ||
+                'Chart JSON appears once under CHART_CONTEXT. SYSTEM_INSTRUCTIONS has rules only.',
             },
           };
         } catch (error) {
