@@ -89,17 +89,37 @@ export function chartSliceForLlm(chart, chartId) {
   if (chartId === 'vimshottari') {
     const panel = buildDashaPanel(chart);
     if (!panel?.vimshottari) return null;
+    const cascade = panel.vimshottari.cascade;
+    // cascade is an object { maha, antar, pratyantar, sookshma, … } — not an array
+    const cascadeSummary =
+      cascade && typeof cascade === 'object' && !Array.isArray(cascade)
+        ? {
+            maha: cascade.maha || null,
+            antar: cascade.antar || null,
+            pratyantar: cascade.pratyantar || null,
+            sookshma: cascade.sookshma || null,
+          }
+        : Array.isArray(cascade)
+          ? cascade.slice(0, 24)
+          : null;
+    const periods = Array.isArray(panel.vimshottari.periods)
+      ? panel.vimshottari.periods.slice(0, 12)
+      : [];
     return {
       id: 'vimshottari',
       title: 'Vimshottari dasha',
       current: chart.dasha?.current || null,
-      cascade: (panel.vimshottari.cascade || []).slice(0, 24),
-      periods: (panel.vimshottari.periods || []).slice(0, 12),
+      cascade: cascadeSummary,
+      periods,
     };
   }
   if (chartId === 'yogini') {
-    const panel = buildDashaPanel(chart);
-    return panel?.yogini ? { id: 'yogini', title: 'Yogini dasha', ...panel.yogini } : null;
+    try {
+      const panel = buildDashaPanel(chart);
+      return panel?.yogini ? { id: 'yogini', title: 'Yogini dasha', ...panel.yogini } : null;
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -129,9 +149,15 @@ export function buildLlmChartContextFromMatrix({
   ids
     .filter((id) => id !== 'lagna' && id !== 'family')
     .forEach((id) => {
-      const slice = chartSliceForLlm(querentChart, id);
-      if (!slice) return;
-      blocks.push(`Querent chart · ${id} (JSON):\n${JSON.stringify(slice)}`);
+      try {
+        const slice = chartSliceForLlm(querentChart, id);
+        if (!slice) return;
+        blocks.push(`Querent chart · ${id} (JSON):\n${JSON.stringify(slice)}`);
+      } catch (error) {
+        blocks.push(
+          `Querent chart · ${id}: unavailable (${String(error?.message || error).slice(0, 120)})`
+        );
+      }
     });
 
   if (includeFamily) {

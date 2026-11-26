@@ -123,13 +123,27 @@ function pickCurrent(periods, at = new Date()) {
 export function expandVimshottariCascade(dasha, at = new Date()) {
   if (!dasha?.periods?.length) return null;
   const maha = pickCurrent(dasha.periods, at) || dasha.current;
-  const mahaIdx = lordIndex(maha.lordName);
+  if (!maha) return null;
+  const mahaIdx = lordIndex(maha.lordName ?? maha.lord);
+  if (mahaIdx < 0) return { maha, antar: null, pratyantar: null, sookshma: null };
   const antarPeriods = subPeriods(maha, mahaIdx, 'antar');
   const antar = pickCurrent(antarPeriods, at);
-  const antarIdx = lordIndex(antar.lordName);
+  if (!antar) {
+    return { maha, antar: null, pratyantar: null, sookshma: null, antarPeriods };
+  }
+  const antarIdx = lordIndex(antar.lordName ?? antar.lord);
+  if (antarIdx < 0) {
+    return { maha, antar, pratyantar: null, sookshma: null, antarPeriods };
+  }
   const pratyantarPeriods = subPeriods(antar, antarIdx, 'pratyantar');
   const pratyantar = pickCurrent(pratyantarPeriods, at);
-  const pratyIdx = lordIndex(pratyantar.lordName);
+  if (!pratyantar) {
+    return { maha, antar, pratyantar: null, sookshma: null, antarPeriods, pratyantarPeriods };
+  }
+  const pratyIdx = lordIndex(pratyantar.lordName ?? pratyantar.lord);
+  if (pratyIdx < 0) {
+    return { maha, antar, pratyantar, sookshma: null, antarPeriods, pratyantarPeriods };
+  }
   const sookshmaPeriods = subPeriods(pratyantar, pratyIdx, 'sookshma');
   const sookshma = pickCurrent(sookshmaPeriods, at);
 

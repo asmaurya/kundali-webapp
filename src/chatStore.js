@@ -456,24 +456,32 @@ export function ChatProvider({ children }) {
             people: peopleForAnonymize(),
           });
           replyText = result.text;
+          const packet = result.llmPacket || {};
           botMeta = {
             provider: result.provider,
             usage: result.usage || null,
             thinking: result.thinking || '',
             model: result.model || null,
             llmPacket: {
-              ...(result.llmPacket || {}),
-              at: result.llmPacket?.at || new Date().toISOString(),
+              ...packet,
+              at: packet.at || new Date().toISOString(),
               topics: topicIds,
               chartIds,
               chartContext,
-              context: result.llmPacket?.context || chartContext,
-              question: result.llmPacket?.question || trimmed,
-              output: result.llmPacket?.output || result.text,
-              thinking: result.llmPacket?.thinking || result.thinking || '',
-              usage: result.llmPacket?.usage || result.usage || null,
+              // Prefer the real chart JSON we assembled locally (never drop it).
+              context: chartContext || packet.context || '',
+              question: packet.question || trimmed,
+              history: packet.history?.length
+                ? packet.history
+                : priorMessages.slice(-8).map((m) => ({
+                    role: m.role === 'bot' ? 'assistant' : 'user',
+                    content: m.text,
+                  })),
+              output: packet.output || result.text,
+              thinking: packet.thinking || result.thinking || '',
+              usage: packet.usage || result.usage || null,
               provider: result.provider,
-              model: result.model || null,
+              model: result.model || packet.model || null,
             },
           };
         } catch (error) {
@@ -491,6 +499,10 @@ export function ChatProvider({ children }) {
               chartContext,
               context: chartContext,
               question: trimmed,
+              history: priorMessages.slice(-8).map((m) => ({
+                role: m.role === 'bot' ? 'assistant' : 'user',
+                content: m.text,
+              })),
               thinking: '',
               output: replyText,
               usage: null,

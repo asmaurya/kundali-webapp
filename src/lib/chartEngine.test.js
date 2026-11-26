@@ -139,3 +139,20 @@ test('buildLlmChartContext always includes querent JSON and optional family', ()
   expect(matrixOnly).toMatch(/navamsa/);
   expect(matrixOnly).not.toMatch(/Family kundali/);
 });
+
+test('buildLlmChartContext with vimshottari matrix ids', () => {
+  const querent = generateChart({
+    date: '1988-08-14',
+    time: '12:45',
+    place: 'Jaipur, Rajasthan, India',
+    lat: 26.9124,
+    lon: 75.7873,
+    tzOffsetHours: 5.5,
+  });
+  const ctx = buildLlmChartContext({
+    querentChart: querent,
+    chartIds: ['lagna', 'vimshottari', 'family'],
+  });
+  expect(ctx).toMatch(/lagna|Querent kundali/i);
+  expect(ctx).toMatch(/vimshottari/i);
+});

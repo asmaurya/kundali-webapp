@@ -42,6 +42,7 @@ export function formatLlmPacketText(packet = {}, fallbackOutput = '') {
     section('OUTPUT', p.output || fallbackOutput || ''),
     section('TOKEN_USAGE', pretty(p.usage || null)),
     section('CHART_INFERENCE', pretty(p.chartInference || null)),
+    section('ERROR', p.error || p.note || ''),
   ];
   return parts.join('\n');
 }
