@@ -701,6 +701,30 @@ async function callOpenAiCompatible(cfg, system, history, userQuestion) {
   };
 }
 
+/**
+ * Claude 4.6+ / 5.x reject thinking.type.enabled (need adaptive + output_config.effort).
+ * Claude 4 / 4.1 / 4.5 reject adaptive (need enabled + budget_tokens).
+ */
+function anthropicUsesAdaptiveThinking(model) {
+  const m = String(model || '').toLowerCase();
+  if (!m) return true;
+  if (/claude-(?:opus|sonnet|haiku)-5(?:[-.]|$)/.test(m)) return true;
+  if (/\b(?:fable|mythos)\b/.test(m)) return true;
+  // 4.6, 4.7, 4.8 … (adaptive-only)
+  if (/claude-(?:opus|sonnet|haiku)-4-[6-9]/.test(m)) return true;
+  if (/claude-(?:opus|sonnet|haiku)-4\.[6-9]/.test(m)) return true;
+  // Dated Sonnet/Opus/Haiku 4 / 4.1 / 4.5 — fixed-budget extended thinking only
+  if (/claude-(?:opus|sonnet|haiku)-4(?:[-.]|$)/.test(m)) return false;
+  // Unknown / Lab-entered aliases: prefer adaptive (matches current Anthropic defaults)
+  return true;
+}
+
+function anthropicEffortLevel(cfg) {
+  const raw = String(cfg.effort || cfg.thinkingEffort || '').toLowerCase();
+  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(raw)) return raw;
+  return cfg.captureThinking ? 'high' : 'medium';
+}
+
 async function callAnthropic(cfg, system, history, userQuestion) {
   const messages = [
     ...normalizeChatHistory(history).map((turn) => ({
@@ -725,10 +749,17 @@ async function callAnthropic(cfg, system, history, userQuestion) {
   // Claude counts thinking toward max_tokens. A 280 cap with ~236 thinking tokens
   // left only ~44 for the visible answer and truncated Hindi mid-sentence.
   const answerBudget = Math.max(Number(cfg.maxTokens) || 512, 400);
+  const useAdaptive = anthropicUsesAdaptiveThinking(cfg.model);
   const thinkingBudget = cfg.captureThinking
     ? Math.max(1536, answerBudget * 3)
     : Math.max(768, answerBudget * 2);
-  const maxTokens = Math.min(8192, answerBudget + thinkingBudget);
+  // Adaptive thinking can use a large share of the budget — leave more headroom.
+  const maxTokens = Math.min(
+    16384,
+    useAdaptive && cfg.captureThinking
+      ? Math.max(answerBudget + 4096, answerBudget * 4)
+      : answerBudget + thinkingBudget
+  );
 
   const body = {
     model: cfg.model,
@@ -738,11 +769,17 @@ async function callAnthropic(cfg, system, history, userQuestion) {
   };
 
   if (cfg.captureThinking) {
-    // Explicit extended thinking so blocks are returned (and budget is reserved).
-    body.thinking = {
-      type: 'enabled',
-      budget_tokens: Math.min(thinkingBudget, maxTokens - Math.min(answerBudget, 512)),
-    };
+    if (useAdaptive) {
+      // Claude 4.6+ / 5.x: enabled+budget_tokens → 400 invalid_request_error
+      body.thinking = { type: 'adaptive' };
+      body.output_config = { effort: anthropicEffortLevel(cfg) };
+    } else {
+      // Claude 4 / 4.1 / 4.5: fixed-budget extended thinking
+      body.thinking = {
+        type: 'enabled',
+        budget_tokens: Math.min(thinkingBudget, maxTokens - Math.min(answerBudget, 512)),
+      };
+    }
   } else if (cfg.topP != null && cfg.topP < 1) {
     // top_p is incompatible with Anthropic extended thinking.
     body.top_p = cfg.topP;
@@ -799,7 +836,9 @@ async function callAnthropic(cfg, system, history, userQuestion) {
       messages: undefined,
       messageCount: body.messages.length,
       answerBudget,
+      thinkingMode: body.thinking?.type || null,
       thinkingBudget: body.thinking?.budget_tokens || thinkingBudget,
+      effort: body.output_config?.effort || null,
     },
     finishReason: payload.stop_reason || null,
   };
