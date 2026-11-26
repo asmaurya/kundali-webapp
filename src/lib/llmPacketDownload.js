@@ -33,8 +33,10 @@ export function formatLlmPacketText(packet = {}, fallbackOutput = '') {
       latencyMs: p.latencyMs ?? null,
       finishReason: p.finishReason || null,
       topics: p.topics || [],
+      chipTopics: p.chipTopics || [],
       chartIds: p.chartIds || [],
     })),
+    section('MATRIX_MANIFEST', pretty(p.matrixManifest || null)),
     section('PARAMS', pretty(p.params || null)),
     section('MASTER_PROMPT', p.masterPrompt || ''),
     section(

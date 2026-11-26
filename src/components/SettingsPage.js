@@ -141,9 +141,11 @@ function SettingsPage({ onBack }) {
             Charts submitted per topic
           </Typography>
           <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
-            When you select topic chips in chat (career, relationships, health, …), only the checked
-            Kundali charts are sent to the LLM for that turn. Lagna stays available as a baseline.
-            Family charts are included when checked and someone is @mentioned.
+            Each row is a topic. On a chat turn we use the chips you tap (or we infer the topic from
+            your question; otherwise the <em>General guidance</em> row). Only the checked charts on
+            those rows are sent — not the whole matrix. Lagna is always included. Family charts need
+            the Family column checked <em>and</em> an @mention. Download raw → MATRIX_MANIFEST shows
+            requested vs actually included charts for that reply.
           </Typography>
           <Typography sx={{ mt: 1, fontSize: 12, color: '#6A6580' }}>
             {checkedCount} selections across {LLM_TOPICS.length} topics

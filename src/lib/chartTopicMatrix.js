@@ -58,6 +58,27 @@ export function normalizeChartTopicMatrix(raw) {
   return base;
 }
 
+/**
+ * Infer topic ids from free-text when chips were not tapped.
+ * Returns [] if nothing matches (caller may fall back to `general`).
+ */
+export function inferTopicIdsFromText(text) {
+  const s = String(text || '');
+  if (!s.trim()) return [];
+  const found = [];
+  const rules = [
+    [/career|job|work|promotion|business|office|naukri|कार्य|नौकरी|करियर/i, 'career'],
+    [/relationship|marriage|partner|love|spouse|compatib|विवाह|रिश्ता|संबंध/i, 'relationships'],
+    [/health|sleep|stress|illness|vitality|स्वास्थ्य/i, 'health'],
+    [/remed|upay|mantra|donation|gem|उपाय/i, 'remedies'],
+    [/general|guidance|overview|hello|hi\b|namaste|सामान्य|मार्गदर्शन/i, 'general'],
+  ];
+  rules.forEach(([re, id]) => {
+    if (re.test(s) && !found.includes(id)) found.push(id);
+  });
+  return found;
+}
+
 /** Union of chart ids enabled for the given topic ids (empty topics → general). */
 export function chartIdsForTopics(matrix, topicIds = []) {
   const m = normalizeChartTopicMatrix(matrix);
@@ -69,4 +90,16 @@ export function chartIdsForTopics(matrix, topicIds = []) {
   });
   if (!out.has('lagna')) out.add('lagna');
   return [...out];
+}
+
+/**
+ * Resolve which matrix row(s) apply for this turn.
+ * Prefer explicit chip topics; else infer from the question; else `general`.
+ */
+export function resolveTopicsForTurn({ chipTopicIds = [], question = '' } = {}) {
+  const chips = (chipTopicIds || []).filter(Boolean);
+  if (chips.length) return chips;
+  const inferred = inferTopicIdsFromText(question);
+  if (inferred.length) return inferred;
+  return ['general'];
 }

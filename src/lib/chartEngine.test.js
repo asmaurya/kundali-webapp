@@ -156,3 +156,22 @@ test('buildLlmChartContext with vimshottari matrix ids', () => {
   expect(ctx).toMatch(/lagna|Querent kundali/i);
   expect(ctx).toMatch(/vimshottari/i);
 });
+
+test('buildLlmChartContextWithManifest reports included vs skipped', () => {
+  const { buildLlmChartContextWithManifest } = require('./chartEngine');
+  const querent = generateChart({
+    date: '1988-08-14',
+    time: '12:45',
+    place: 'Jaipur, Rajasthan, India',
+    lat: 26.9124,
+    lon: 75.7873,
+    tzOffsetHours: 5.5,
+  });
+  const { context, manifest } = buildLlmChartContextWithManifest({
+    querentChart: querent,
+    chartIds: ['lagna', 'navamsa', 'family'],
+  });
+  expect(context).toMatch(/navamsa/);
+  expect(manifest.included).toEqual(expect.arrayContaining(['lagna', 'navamsa']));
+  expect(manifest.skipped.some((s) => s.id === 'family')).toBe(true);
+});

@@ -539,7 +539,10 @@ export function chartContextForPrompt(chart) {
 }
 
 /**
- * Sync builder used by chat. Webpack resolves the static re-export; do not use
+ * Sync builders used by chat. Webpack resolves the static re-export; do not use
  * CommonJS require() — it is undefined in the browser bundle and broke replies.
  */
-export { buildLlmChartContextFromMatrix as buildLlmChartContext } from './chartLlmSlices';
+export {
+  buildLlmChartContextFromMatrix as buildLlmChartContext,
+  buildLlmChartContextWithManifest,
+} from './chartLlmSlices';

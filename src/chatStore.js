@@ -9,10 +9,11 @@ import {
 } from './betaSession';
 import { askOracle } from './api';
 import { scriptedReplyFor } from './scriptedReplies';
-import { buildLlmChartContext } from './lib/chartEngine';
+import { buildLlmChartContextWithManifest } from './lib/chartEngine';
 import {
   chartIdsForTopics,
   normalizeChartTopicMatrix,
+  resolveTopicsForTurn,
   topicIdFromLabel,
 } from './lib/chartTopicMatrix';
 import { getSelfProfile, listProfiles } from './lib/profiles';
@@ -436,17 +437,25 @@ export function ChatProvider({ children }) {
         const locale = settings.locale === 'hi' ? 'hi' : 'en';
         const chart = getChart();
         const matrix = normalizeChartTopicMatrix(settings.chartTopicMatrix);
-        const chartIds = chartIdsForTopics(matrix, topicIds);
+        // Chips win; otherwise infer from question text; else general row.
+        const resolvedTopics = resolveTopicsForTurn({
+          chipTopicIds: topicIds,
+          question: trimmed,
+        });
+        const chartIds = chartIdsForTopics(matrix, resolvedTopics);
         const familyCharts = chartIds.includes('family')
           ? familyChartsFromQuestion(trimmed)
           : [];
         let chartContext = '';
+        let matrixManifest = { requested: chartIds, included: [], skipped: [] };
         try {
-          chartContext = buildLlmChartContext({
+          const built = buildLlmChartContextWithManifest({
             querentChart: chart,
             familyCharts,
             chartIds,
           });
+          chartContext = built.context;
+          matrixManifest = built.manifest;
           const result = await askOracle({
             question: trimmed,
             chart,
@@ -465,8 +474,10 @@ export function ChatProvider({ children }) {
             llmPacket: {
               ...packet,
               at: packet.at || new Date().toISOString(),
-              topics: topicIds,
+              topics: resolvedTopics,
+              chipTopics: topicIds,
               chartIds,
+              matrixManifest,
               // One chart copy: prefer worker context (already anonymised); else local.
               context: packet.context || chartContext || '',
               chartContext: undefined,
@@ -486,7 +497,7 @@ export function ChatProvider({ children }) {
               model: result.model || packet.model || null,
               note:
                 packet.note ||
-                'Chart JSON appears once under CHART_CONTEXT. SYSTEM_INSTRUCTIONS has rules only.',
+                'Matrix charts for resolved topics only. Family needs @mention. See MATRIX_MANIFEST.',
             },
           };
         } catch (error) {
@@ -499,8 +510,10 @@ export function ChatProvider({ children }) {
             llmPacket: {
               at: new Date().toISOString(),
               provider: 'local-scripted',
-              topics: topicIds,
+              topics: resolvedTopics,
+              chipTopics: topicIds,
               chartIds,
+              matrixManifest,
               chartContext,
               context: chartContext,
               question: trimmed,

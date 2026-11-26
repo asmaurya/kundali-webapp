@@ -126,14 +126,17 @@ export function chartSliceForLlm(chart, chartId) {
 
 /**
  * Build LLM chart context from the topic→chart matrix.
+ * Returns { context, manifest } so callers can prove which charts were embedded.
  * Family charts only when `family` is selected and familyCharts were resolved.
  */
-export function buildLlmChartContextFromMatrix({
+export function buildLlmChartContextWithManifest({
   querentChart,
   familyCharts = [],
   chartIds = null,
 } = {}) {
   const blocks = [];
+  const included = [];
+  const skipped = [];
   const ids = Array.isArray(chartIds) && chartIds.length ? chartIds : ['lagna', 'family'];
   const includeFamily = ids.includes('family');
 
@@ -141,8 +144,10 @@ export function buildLlmChartContextFromMatrix({
     const querent = chartJsonForPrompt(querentChart);
     if (querent) {
       blocks.push(`Querent kundali · lagna / D1 (JSON):\n${JSON.stringify(querent)}`);
+      included.push('lagna');
     } else {
       blocks.push('Querent kundali (JSON): null');
+      skipped.push({ id: 'lagna', reason: 'no_querent_chart' });
     }
   }
 
@@ -151,9 +156,14 @@ export function buildLlmChartContextFromMatrix({
     .forEach((id) => {
       try {
         const slice = chartSliceForLlm(querentChart, id);
-        if (!slice) return;
+        if (!slice) {
+          skipped.push({ id, reason: 'slice_null' });
+          return;
+        }
         blocks.push(`Querent chart · ${id} (JSON):\n${JSON.stringify(slice)}`);
+        included.push(id);
       } catch (error) {
+        skipped.push({ id, reason: String(error?.message || error).slice(0, 120) });
         blocks.push(
           `Querent chart · ${id}: unavailable (${String(error?.message || error).slice(0, 120)})`
         );
@@ -161,13 +171,29 @@ export function buildLlmChartContextFromMatrix({
     });
 
   if (includeFamily) {
-    (familyCharts || []).forEach((entry) => {
+    const familyList = familyCharts || [];
+    if (!familyList.length) {
+      skipped.push({ id: 'family', reason: 'no_@mention_match' });
+    }
+    familyList.forEach((entry) => {
       const json = chartJsonForPrompt(entry.chart);
-      if (!json) return;
+      if (!json) {
+        skipped.push({ id: 'family', reason: 'empty_family_chart' });
+        return;
+      }
       const label = entry.label || entry.relation || 'family';
       blocks.push(`Family kundali — ${label} (JSON):\n${JSON.stringify(json)}`);
+      if (!included.includes('family')) included.push('family');
     });
   }
 
-  return blocks.join('\n\n');
+  return {
+    context: blocks.join('\n\n'),
+    manifest: { requested: ids, included, skipped },
+  };
+}
+
+/** String-only helper for older call sites / tests. */
+export function buildLlmChartContextFromMatrix(options = {}) {
+  return buildLlmChartContextWithManifest(options).context;
 }
