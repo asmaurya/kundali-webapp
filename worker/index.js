@@ -44,9 +44,28 @@ const LLM_PROVIDERS = {
     baseUrl: 'https://api.anthropic.com/v1',
     secretName: 'ANTHROPIC_API_KEY',
     api: 'anthropic',
-    defaultModel: 'claude-sonnet-4-20250514',
+    defaultModel: 'claude-sonnet-5-5',
   },
 };
+
+/** Retired Anthropic IDs → current replacements (404 not_found_error otherwise). */
+const RETIRED_ANTHROPIC_MODELS = {
+  'claude-sonnet-4-20250514': 'claude-sonnet-5-5',
+  'claude-sonnet-4': 'claude-sonnet-5-5',
+  'claude-opus-4-20250514': 'claude-opus-4-8',
+  'claude-opus-4': 'claude-opus-4-8',
+  'claude-sonnet-4-5-20250929': 'claude-sonnet-5-5',
+  'claude-sonnet-4-5': 'claude-sonnet-5-5',
+  'claude-3-7-sonnet-20250219': 'claude-sonnet-5-5',
+  'claude-3-5-sonnet-20241022': 'claude-sonnet-5-5',
+  'claude-3-5-sonnet-latest': 'claude-sonnet-5-5',
+};
+
+function resolveAnthropicModelId(model) {
+  const raw = String(model || '').trim();
+  if (!raw) return LLM_PROVIDERS.claude.defaultModel;
+  return RETIRED_ANTHROPIC_MODELS[raw] || RETIRED_ANTHROPIC_MODELS[raw.toLowerCase()] || raw;
+}
 
 const DEFAULT_LLM_LAB = {
   masterPrompt: '',
@@ -336,7 +355,10 @@ function publicLlmLabView(lab, env) {
     keyLocked: Boolean(resolvedMeta.keyLocked),
     baseUrl: resolvedMeta.baseUrl,
     secretName: resolvedMeta.secretName,
-    model: lab.model || env.OPENAI_MODEL || resolvedMeta.defaultModel || '',
+    model: (() => {
+      const raw = lab.model || (resolvedMeta.id === 'claude' ? '' : env.OPENAI_MODEL) || resolvedMeta.defaultModel || '';
+      return resolvedMeta.api === 'anthropic' ? resolveAnthropicModelId(raw) : raw;
+    })(),
     apiKeySet: keySet,
     apiKeyMasked: keySet
       ? resolvedMeta.id === 'nvidia'
@@ -566,13 +588,14 @@ function llmConfig(env, lab = null) {
   }
   if (!resolvedKey) return null;
 
-  const model =
+  let model =
     String(lab?.model || '').trim() ||
-    (meta.id === 'nvidia' || meta.id === 'openai' || meta.id === 'claude'
-      ? String(env.OPENAI_MODEL || '').trim()
-      : '') ||
+    (meta.id === 'nvidia' || meta.id === 'openai' ? String(env.OPENAI_MODEL || '').trim() : '') ||
     meta.defaultModel ||
     '';
+  if (meta.api === 'anthropic') {
+    model = resolveAnthropicModelId(model);
+  }
 
   return {
     key: resolvedKey,

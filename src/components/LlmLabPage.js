@@ -44,7 +44,7 @@ const FALLBACK_PROVIDERS = [
     label: 'Claude (Anthropic)',
     baseUrl: 'https://api.anthropic.com/v1',
     secretName: 'ANTHROPIC_API_KEY',
-    defaultModel: 'claude-sonnet-4-20250514',
+    defaultModel: 'claude-sonnet-5-5',
     keyLocked: false,
     custom: false,
   },
