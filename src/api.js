@@ -71,6 +71,25 @@ export async function summarizeConversation({ messages = [], chart }) {
   return String(result.answer || '').trim();
 }
 
+/** Flatten birth/chart fields for Worker chart-inference template mapping. */
+export function chartVarsFromChart(chart) {
+  const birth = chart?.birth || {};
+  const summary = chart?.summary || {};
+  return {
+    'birth.date': birth.date ?? '',
+    'birth.time': birth.time ?? '',
+    'birth.place': birth.place ?? '',
+    'birth.lat': birth.lat ?? '',
+    'birth.lon': birth.lon ?? '',
+    'birth.tz': birth.tz ?? '',
+    'birth.tzOffsetHours': birth.tzOffsetHours ?? '',
+    'chart.lagna': summary.lagna ?? '',
+    'chart.moonSign': summary.moonSign ?? '',
+    'chart.nakshatra': summary.nakshatra ?? '',
+    'chart.dasha': summary.currentDasha ?? '',
+  };
+}
+
 export async function askOracle({
   question,
   chart,
@@ -91,6 +110,7 @@ export async function askOracle({
   const result = await askWithPrivacy({
     question,
     chartContext: resolvedContext,
+    chartVars: chartVarsFromChart(chart),
     messages: history,
     locale,
     people,

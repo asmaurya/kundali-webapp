@@ -31,6 +31,7 @@ export function resetAnswerProvider() {
 export async function askWithPrivacy({
   question,
   chartContext,
+  chartVars = null,
   messages = [],
   locale = 'en',
   people = {},
@@ -54,6 +55,7 @@ export async function askWithPrivacy({
 
   const request = {
     ...assembled,
+    chartVars: chartVars && typeof chartVars === 'object' ? chartVars : undefined,
     anonymousId: makeAnonymousRequestId(),
     modelTier,
   };

@@ -67,6 +67,36 @@ function resolveAnthropicModelId(model) {
   return RETIRED_ANTHROPIC_MODELS[raw] || RETIRED_ANTHROPIC_MODELS[raw.toLowerCase()] || raw;
 }
 
+const DEFAULT_PROVIDER_PROFILE = {
+  model: '',
+  topP: 1,
+  frequencyPenalty: 0,
+  presencePenalty: 0,
+  maxTokens: 512,
+  captureThinking: true,
+  showThinking: false,
+  thinkingEffort: 'high',
+};
+
+const DEFAULT_CHART_INFERENCE = {
+  enabled: false,
+  baseUrl: '',
+  method: 'POST',
+  /** JSON object string; values may use {{var}} and {{secret.NAME}} */
+  headersJson: '{\n  "Content-Type": "application/json"\n}',
+  /**
+   * Request body template. Placeholders map from chart/birth vars, e.g.
+   * {{birth.date}} {{birth.time}} {{birth.lat}} {{birth.lon}} {{birth.tz}}
+   * {{birth.place}} {{chart.lagna}} {{chart.moonSign}} {{chart.dasha}}
+   */
+  bodyTemplate:
+    '{\n  "date": "{{birth.date}}",\n  "time": "{{birth.time}}",\n  "lat": {{birth.lat}},\n  "lon": {{birth.lon}},\n  "tz": "{{birth.tz}}",\n  "place": "{{birth.place}}"\n}',
+  /** Dot path into JSON response to append; empty = whole JSON body */
+  responseJsonPath: '',
+  /** Optional Cloudflare secret name referenced as {{secret.<name>}} in headers/body */
+  secretName: 'CHART_INFERENCE_KEY',
+};
+
 const DEFAULT_LLM_LAB = {
   masterPrompt: '',
   provider: 'nvidia',
@@ -77,11 +107,102 @@ const DEFAULT_LLM_LAB = {
   maxTokens: 512,
   captureThinking: true,
   showThinking: false,
+  thinkingEffort: 'high',
+  /** Per-provider generation params — switching provider restores that slot. */
+  providerProfiles: {},
+  /** Optional third-party chart / Jyotish inference API (template-mapped vars). */
+  chartInference: { ...DEFAULT_CHART_INFERENCE },
   /** @type {Array<{id:string,label:string,baseUrl:string,api:string,secretName:string,defaultModel?:string}>} */
   customProviders: [],
   /** Booleans only — never store key material. Tracks non-NVIDIA secrets written from Lab. */
   keysConfigured: {},
 };
+
+const PROVIDER_PROFILE_KEYS = [
+  'model',
+  'topP',
+  'frequencyPenalty',
+  'presencePenalty',
+  'maxTokens',
+  'captureThinking',
+  'showThinking',
+  'thinkingEffort',
+];
+
+function defaultProfileForProvider(providerId) {
+  if (providerId === 'claude') {
+    return {
+      ...DEFAULT_PROVIDER_PROFILE,
+      model: LLM_PROVIDERS.claude.defaultModel,
+      maxTokens: 4096,
+      captureThinking: true,
+      showThinking: false,
+      thinkingEffort: 'high',
+      // Claude ignores these; kept for profile shape only
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      topP: 1,
+    };
+  }
+  if (providerId === 'openai') {
+    return {
+      ...DEFAULT_PROVIDER_PROFILE,
+      model: LLM_PROVIDERS.openai.defaultModel,
+      maxTokens: 1024,
+    };
+  }
+  if (providerId === 'nvidia') {
+    return {
+      ...DEFAULT_PROVIDER_PROFILE,
+      model: LLM_PROVIDERS.nvidia.defaultModel,
+      maxTokens: 512,
+    };
+  }
+  return { ...DEFAULT_PROVIDER_PROFILE };
+}
+
+function readProviderProfile(lab, providerId) {
+  const id = String(providerId || '').trim() || 'nvidia';
+  const profiles = lab?.providerProfiles && typeof lab.providerProfiles === 'object' ? lab.providerProfiles : {};
+  const stored = profiles[id] && typeof profiles[id] === 'object' ? profiles[id] : null;
+  const defaults = defaultProfileForProvider(id);
+  // One-time migrate flat Lab fields into the active provider's profile when empty.
+  const migrated = {};
+  if (!stored && lab && (lab.provider === id || (!lab.provider && id === 'nvidia'))) {
+    PROVIDER_PROFILE_KEYS.forEach((key) => {
+      if (lab[key] != null && lab[key] !== '') migrated[key] = lab[key];
+    });
+  }
+  return { ...defaults, ...migrated, ...(stored || {}) };
+}
+
+function syncFlatFromProfile(lab, providerId, profile) {
+  const next = { ...lab, provider: providerId, providerProfiles: { ...(lab.providerProfiles || {}) } };
+  next.providerProfiles[providerId] = { ...profile };
+  PROVIDER_PROFILE_KEYS.forEach((key) => {
+    if (profile[key] != null) next[key] = profile[key];
+  });
+  return next;
+}
+
+function sanitizeChartInference(raw) {
+  const base = { ...DEFAULT_CHART_INFERENCE, ...(raw && typeof raw === 'object' ? raw : {}) };
+  return {
+    enabled: Boolean(base.enabled),
+    baseUrl: String(base.baseUrl || '')
+      .trim()
+      .replace(/\/$/, '')
+      .slice(0, 400),
+    method: String(base.method || 'POST').toUpperCase() === 'GET' ? 'GET' : 'POST',
+    headersJson: String(base.headersJson || DEFAULT_CHART_INFERENCE.headersJson).slice(0, 4000),
+    bodyTemplate: String(base.bodyTemplate || DEFAULT_CHART_INFERENCE.bodyTemplate).slice(0, 12000),
+    responseJsonPath: String(base.responseJsonPath || '').trim().slice(0, 200),
+    secretName: String(base.secretName || 'CHART_INFERENCE_KEY')
+      .trim()
+      .replace(/[^A-Za-z0-9_]/g, '_')
+      .slice(0, 64),
+  };
+}
 
 function slugifyProviderId(label) {
   const slug = String(label || 'custom')
@@ -185,8 +306,29 @@ async function writeLlmLab(env, lab) {
   // Never persist API keys in lab storage — keys live only as Cloudflare secrets.
   const merged = { ...DEFAULT_LLM_LAB, ...lab };
   delete merged.apiKey;
+  const profiles =
+    merged.providerProfiles && typeof merged.providerProfiles === 'object' ? merged.providerProfiles : {};
+  const normalizedProfiles = {};
+  Object.keys(profiles).forEach((id) => {
+    const p = profiles[id];
+    if (!p || typeof p !== 'object') return;
+    normalizedProfiles[id] = {
+      model: String(p.model || '').slice(0, 200),
+      topP: clampNumber(p.topP, 0, 1, 1),
+      frequencyPenalty: clampNumber(p.frequencyPenalty, -2, 2, 0),
+      presencePenalty: clampNumber(p.presencePenalty, -2, 2, 0),
+      maxTokens: clampNumber(p.maxTokens, 64, 16384, 512),
+      captureThinking: p.captureThinking !== false,
+      showThinking: Boolean(p.showThinking),
+      thinkingEffort: ['low', 'medium', 'high', 'xhigh', 'max'].includes(String(p.thinkingEffort || ''))
+        ? String(p.thinkingEffort)
+        : 'high',
+    };
+  });
   const payload = {
     ...merged,
+    providerProfiles: normalizedProfiles,
+    chartInference: sanitizeChartInference(merged.chartInference),
     customProviders: listCustomProviders(merged).map((p) => ({
       id: p.id,
       label: String(p.label || p.id).slice(0, 80),
@@ -318,6 +460,7 @@ function authorizeAdmin(body, env) {
 function publicLlmLabView(lab, env) {
   const resolvedProvider = normalizeProviderId(lab.provider || inferProviderFromEnv(env), lab);
   const resolvedMeta = resolveProviderMeta(resolvedProvider, lab);
+  const activeProfile = readProviderProfile(lab, resolvedProvider);
   const keySet = keyIsConfigured(env, lab, resolvedMeta);
   const builtInProviders = Object.values(LLM_PROVIDERS).map((p) => ({
     id: p.id,
@@ -356,9 +499,18 @@ function publicLlmLabView(lab, env) {
     baseUrl: resolvedMeta.baseUrl,
     secretName: resolvedMeta.secretName,
     model: (() => {
-      const raw = lab.model || (resolvedMeta.id === 'claude' ? '' : env.OPENAI_MODEL) || resolvedMeta.defaultModel || '';
+      const profile = readProviderProfile(lab, resolvedProvider);
+      const raw =
+        profile.model ||
+        lab.model ||
+        (resolvedMeta.id === 'claude' ? '' : env.OPENAI_MODEL) ||
+        resolvedMeta.defaultModel ||
+        '';
       return resolvedMeta.api === 'anthropic' ? resolveAnthropicModelId(raw) : raw;
     })(),
+    providerProfiles: lab.providerProfiles || {},
+    chartInference: sanitizeChartInference(lab.chartInference),
+    thinkingEffort: activeProfile.thinkingEffort || 'high',
     apiKeySet: keySet,
     apiKeyMasked: keySet
       ? resolvedMeta.id === 'nvidia'
@@ -367,12 +519,12 @@ function publicLlmLabView(lab, env) {
       : '',
     apiKeyRequired: resolvedMeta.id !== 'nvidia' && !keySet,
     cloudflareSecretsWritable: Boolean(env.CF_ACCOUNT_ID && env.CF_API_TOKEN),
-    topP: Number(lab.topP ?? DEFAULT_LLM_LAB.topP),
-    frequencyPenalty: Number(lab.frequencyPenalty ?? 0),
-    presencePenalty: Number(lab.presencePenalty ?? 0),
-    maxTokens: Number(lab.maxTokens ?? DEFAULT_LLM_LAB.maxTokens),
-    captureThinking: lab.captureThinking !== false,
-    showThinking: Boolean(lab.showThinking),
+    topP: Number(activeProfile.topP ?? lab.topP ?? DEFAULT_LLM_LAB.topP),
+    frequencyPenalty: Number(activeProfile.frequencyPenalty ?? lab.frequencyPenalty ?? 0),
+    presencePenalty: Number(activeProfile.presencePenalty ?? lab.presencePenalty ?? 0),
+    maxTokens: Number(activeProfile.maxTokens ?? lab.maxTokens ?? DEFAULT_LLM_LAB.maxTokens),
+    captureThinking: activeProfile.captureThinking !== false,
+    showThinking: Boolean(activeProfile.showThinking),
     updatedAt: lab.updatedAt || null,
     providers: [...builtInProviders, ...customProviders],
     customProviders,
@@ -588,8 +740,9 @@ function llmConfig(env, lab = null) {
   }
   if (!resolvedKey) return null;
 
+  const profile = readProviderProfile(lab, meta.id);
   let model =
-    String(lab?.model || '').trim() ||
+    String(profile.model || lab?.model || '').trim() ||
     (meta.id === 'nvidia' || meta.id === 'openai' ? String(env.OPENAI_MODEL || '').trim() : '') ||
     meta.defaultModel ||
     '';
@@ -604,12 +757,14 @@ function llmConfig(env, lab = null) {
     provider: meta.id,
     api: meta.api,
     secretName: meta.secretName,
-    topP: clampNumber(lab?.topP, 0, 1, 1),
-    frequencyPenalty: clampNumber(lab?.frequencyPenalty, -2, 2, 0),
-    presencePenalty: clampNumber(lab?.presencePenalty, -2, 2, 0),
-    maxTokens: clampNumber(lab?.maxTokens, 64, 8192, 512),
-    captureThinking: lab ? lab.captureThinking !== false : true,
-    showThinking: Boolean(lab?.showThinking),
+    topP: clampNumber(profile.topP ?? lab?.topP, 0, 1, 1),
+    // OpenAI-compat only — Anthropic rejects these fields.
+    frequencyPenalty: clampNumber(profile.frequencyPenalty ?? lab?.frequencyPenalty, -2, 2, 0),
+    presencePenalty: clampNumber(profile.presencePenalty ?? lab?.presencePenalty, -2, 2, 0),
+    maxTokens: clampNumber(profile.maxTokens ?? lab?.maxTokens, 64, 16384, meta.id === 'claude' ? 4096 : 512),
+    captureThinking: lab ? profile.captureThinking !== false : true,
+    showThinking: Boolean(profile.showThinking ?? lab?.showThinking),
+    thinkingEffort: profile.thinkingEffort || lab?.thinkingEffort || 'high',
   };
 }
 
@@ -769,19 +924,19 @@ async function callAnthropic(cfg, system, history, userQuestion) {
     normalized.unshift({ role: 'user', content: userQuestion });
   }
 
-  // Claude counts thinking toward max_tokens. A 280 cap with ~236 thinking tokens
-  // left only ~44 for the visible answer and truncated Hindi mid-sentence.
-  const answerBudget = Math.max(Number(cfg.maxTokens) || 512, 400);
+  // Claude counts thinking toward max_tokens. Lab defaults of 512 are too low once
+  // thinking is on — raise the floor and never send frequency/presence (unsupported).
+  const answerBudget = Math.max(Number(cfg.maxTokens) || 512, cfg.captureThinking ? 1024 : 400);
   const useAdaptive = anthropicUsesAdaptiveThinking(cfg.model);
-  const thinkingBudget = cfg.captureThinking
-    ? Math.max(1536, answerBudget * 3)
-    : Math.max(768, answerBudget * 2);
-  // Adaptive thinking can use a large share of the budget — leave more headroom.
+  // Manual extended thinking: budget_tokens ≥ 1024 and strictly < max_tokens.
+  const thinkingBudget = Math.max(1024, Math.min(10000, Math.max(1536, answerBudget * 2)));
   const maxTokens = Math.min(
     16384,
-    useAdaptive && cfg.captureThinking
-      ? Math.max(answerBudget + 4096, answerBudget * 4)
-      : answerBudget + thinkingBudget
+    cfg.captureThinking
+      ? useAdaptive
+        ? Math.max(answerBudget + 4096, answerBudget * 4, 4096)
+        : Math.max(answerBudget + thinkingBudget + 256, thinkingBudget + 1024)
+      : answerBudget
   );
 
   const body = {
@@ -790,22 +945,25 @@ async function callAnthropic(cfg, system, history, userQuestion) {
     system,
     messages: normalized,
   };
+  // Never send frequency_penalty / presence_penalty — Claude has no equivalents.
+  // Never send top_p (or non-default temperature) while thinking is active.
 
   if (cfg.captureThinking) {
+    const display = cfg.showThinking ? 'summarized' : 'omitted';
     if (useAdaptive) {
-      // Claude 4.6+ / 5.x: enabled+budget_tokens → 400 invalid_request_error
-      body.thinking = { type: 'adaptive' };
+      // Claude 4.7+ / 5.x (and preferred on 4.6): adaptive + output_config.effort
+      body.thinking = { type: 'adaptive', display };
       body.output_config = { effort: anthropicEffortLevel(cfg) };
     } else {
-      // Claude 4 / 4.1 / 4.5: fixed-budget extended thinking
+      // Claude 4 / 4.1 / 4.5: fixed-budget extended thinking only
+      const budget = Math.min(thinkingBudget, maxTokens - 512);
       body.thinking = {
         type: 'enabled',
-        budget_tokens: Math.min(thinkingBudget, maxTokens - Math.min(answerBudget, 512)),
+        budget_tokens: Math.max(1024, budget),
       };
     }
-  } else if (cfg.topP != null && cfg.topP < 1) {
-    // top_p is incompatible with Anthropic extended thinking.
-    body.top_p = cfg.topP;
+  } else if (cfg.topP != null && Number(cfg.topP) < 1) {
+    body.top_p = Number(cfg.topP);
   }
 
   const started = Date.now();
@@ -1065,6 +1223,114 @@ async function writeAccountStore(env, email, account) {
   return payload;
 }
 
+function renderTemplate(template, vars) {
+  return String(template || '').replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_m, key) => {
+    if (Object.prototype.hasOwnProperty.call(vars, key)) {
+      const v = vars[key];
+      return v == null ? '' : String(v);
+    }
+    return '';
+  });
+}
+
+function valueAtPath(obj, path) {
+  if (!path) return obj;
+  return String(path)
+    .split('.')
+    .filter(Boolean)
+    .reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+}
+
+function buildChartInferenceVars(chartVars, env, secretName) {
+  const vars = { ...(chartVars && typeof chartVars === 'object' ? chartVars : {}) };
+  if (secretName && env[secretName]) {
+    vars[`secret.${secretName}`] = String(env[secretName]);
+  }
+  // Common aliases
+  if (vars['birth.date'] == null && vars.date != null) vars['birth.date'] = vars.date;
+  if (vars['birth.time'] == null && vars.time != null) vars['birth.time'] = vars.time;
+  if (vars['birth.lat'] == null && vars.lat != null) vars['birth.lat'] = vars.lat;
+  if (vars['birth.lon'] == null && vars.lon != null) vars['birth.lon'] = vars.lon;
+  return vars;
+}
+
+/**
+ * Optional third-party chart/Jyotish inference call using Lab template mapping.
+ * Returns enriched chartContext string (original + inference JSON).
+ */
+async function enrichChartContextWithInference(env, lab, chartContext, chartVars) {
+  const cfg = sanitizeChartInference(lab?.chartInference);
+  if (!cfg.enabled || !cfg.baseUrl) {
+    return { chartContext, inference: null };
+  }
+  if (!/^https?:\/\//i.test(cfg.baseUrl)) {
+    return { chartContext, inference: { error: 'invalid_base_url' } };
+  }
+
+  const vars = buildChartInferenceVars(chartVars, env, cfg.secretName);
+  let headers = {};
+  try {
+    headers = JSON.parse(renderTemplate(cfg.headersJson || '{}', vars));
+  } catch {
+    return { chartContext, inference: { error: 'invalid_headers_json' } };
+  }
+  if (!headers || typeof headers !== 'object') headers = {};
+
+  const init = {
+    method: cfg.method,
+    headers: { accept: 'application/json', ...headers },
+  };
+  let url = cfg.baseUrl;
+  if (cfg.method === 'GET') {
+    const rendered = renderTemplate(cfg.bodyTemplate || '', vars);
+    try {
+      const q = JSON.parse(rendered);
+      const params = new URLSearchParams();
+      Object.entries(q || {}).forEach(([k, v]) => {
+        if (v != null && v !== '') params.set(k, String(v));
+      });
+      url = `${cfg.baseUrl}${cfg.baseUrl.includes('?') ? '&' : '?'}${params.toString()}`;
+    } catch {
+      /* leave URL as-is */
+    }
+  } else {
+    init.body = renderTemplate(cfg.bodyTemplate || '{}', vars);
+    if (!init.headers['content-type'] && !init.headers['Content-Type']) {
+      init.headers['Content-Type'] = 'application/json';
+    }
+  }
+
+  try {
+    const response = await fetch(url, init);
+    const raw = await response.text();
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = { raw: raw.slice(0, 4000) };
+    }
+    if (!response.ok) {
+      return {
+        chartContext,
+        inference: { error: `chart_inference_${response.status}`, detail: raw.slice(0, 400) },
+      };
+    }
+    const extracted = valueAtPath(parsed, cfg.responseJsonPath);
+    const snippet =
+      typeof extracted === 'string' ? extracted : JSON.stringify(extracted ?? parsed, null, 0);
+    const enriched = `${chartContext || ''}\n\nExternal chart inference (JSON):\n${String(snippet).slice(0, 8000)}`;
+    return {
+      chartContext: enriched,
+      inference: { ok: true, status: response.status, bytes: snippet.length },
+    };
+  } catch (error) {
+    return {
+      chartContext,
+      inference: { error: String(error?.message || error).slice(0, 240) },
+    };
+  }
+}
+
 async function handleChat(request, env) {
   const body = await request.json().catch(() => null);
   if (!body || !body.question) {
@@ -1077,16 +1343,19 @@ async function handleChat(request, env) {
     return json(crisisReply(locale));
   }
 
-  const chartContext = body.chartContext || 'No chart provided.';
+  let chartContext = body.chartContext || 'No chart provided.';
   const summary = String(body.summary || '').slice(0, 1200);
   // Prefer client-assembled history (already windowed + anonymised); fall back to raw.
   const history = Array.isArray(body.history) ? body.history : [];
   const lab = await readLlmLab(env);
+  const enriched = await enrichChartContextWithInference(env, lab, chartContext, body.chartVars || body.birth);
+  chartContext = enriched.chartContext;
   try {
     const llm = await openAiReply(env, question, chartContext, history, locale, summary, lab);
     if (llm) {
       return json({
         ...llm,
+        chartInference: enriched.inference || undefined,
         usage: {
           ...(llm.usage || {}),
           modelTier: body.modelTier || 'flash',
@@ -1099,6 +1368,7 @@ async function handleChat(request, env) {
       text: chartAwareFallback(question, chartContext, locale),
       provider: 'chart-fallback',
       used_llm: false,
+      chartInference: enriched.inference || undefined,
       warning: String(error.message || error),
     });
   }
@@ -1400,9 +1670,30 @@ async function handleLlmLab(request, env) {
     if (body.presencePenalty != null) {
       next.presencePenalty = clampNumber(body.presencePenalty, -2, 2, existing.presencePenalty);
     }
-    if (body.maxTokens != null) next.maxTokens = clampNumber(body.maxTokens, 64, 8192, existing.maxTokens);
+    if (body.maxTokens != null) next.maxTokens = clampNumber(body.maxTokens, 64, 16384, existing.maxTokens);
     if (typeof body.captureThinking === 'boolean') next.captureThinking = body.captureThinking;
     if (typeof body.showThinking === 'boolean') next.showThinking = body.showThinking;
+    if (typeof body.thinkingEffort === 'string') {
+      const effort = body.thinkingEffort.toLowerCase().trim();
+      if (['low', 'medium', 'high', 'xhigh', 'max'].includes(effort)) next.thinkingEffort = effort;
+    }
+    if (body.chartInference && typeof body.chartInference === 'object') {
+      next.chartInference = sanitizeChartInference({
+        ...sanitizeChartInference(existing.chartInference),
+        ...body.chartInference,
+      });
+    }
+    // Merge incoming per-provider profiles (partial updates allowed).
+    if (body.providerProfiles && typeof body.providerProfiles === 'object') {
+      next.providerProfiles = { ...(existing.providerProfiles || {}) };
+      Object.entries(body.providerProfiles).forEach(([id, profile]) => {
+        if (!profile || typeof profile !== 'object') return;
+        next.providerProfiles[id] = {
+          ...readProviderProfile(existing, id),
+          ...profile,
+        };
+      });
+    }
 
     // Upsert / update a custom provider definition (no key material stored here).
     if (body.customProvider && typeof body.customProvider === 'object') {
@@ -1437,6 +1728,23 @@ async function handleLlmLab(request, env) {
 
     if (typeof body.provider === 'string' && body.provider !== '__add_custom__') {
       next.provider = normalizeProviderId(body.provider, next);
+    }
+
+    // Keep active provider's profile in sync with the flat Lab fields just saved.
+    {
+      const activeId = next.provider || 'nvidia';
+      const activeProfile = {
+        ...readProviderProfile(next, activeId),
+        model: next.model,
+        topP: next.topP,
+        frequencyPenalty: next.frequencyPenalty,
+        presencePenalty: next.presencePenalty,
+        maxTokens: next.maxTokens,
+        captureThinking: next.captureThinking,
+        showThinking: next.showThinking,
+        thinkingEffort: next.thinkingEffort || 'high',
+      };
+      Object.assign(next, syncFlatFromProfile(next, activeId, activeProfile));
     }
 
     // Custom providers may update base URL when selected.

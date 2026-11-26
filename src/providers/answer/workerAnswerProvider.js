@@ -18,6 +18,7 @@ export function createWorkerAnswerProvider({
           question: request.question,
           locale: request.locale || 'en',
           chartContext: request.chartContext || '',
+          chartVars: request.chartVars || undefined,
           summary: request.summary || '',
           history: request.history || [],
           anonymousId: request.anonymousId || '',

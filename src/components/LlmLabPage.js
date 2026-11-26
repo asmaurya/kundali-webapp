@@ -64,7 +64,69 @@ const emptyForm = {
   maxTokens: 512,
   captureThinking: true,
   showThinking: false,
+  thinkingEffort: 'high',
 };
+
+const emptyChartInference = {
+  enabled: false,
+  baseUrl: '',
+  method: 'POST',
+  headersJson: '{\n  "Content-Type": "application/json"\n}',
+  bodyTemplate:
+    '{\n  "date": "{{birth.date}}",\n  "time": "{{birth.time}}",\n  "lat": {{birth.lat}},\n  "lon": {{birth.lon}},\n  "tz": "{{birth.tz}}",\n  "place": "{{birth.place}}"\n}',
+  responseJsonPath: '',
+  secretName: 'CHART_INFERENCE_KEY',
+};
+
+function pickProviderParams(form) {
+  return {
+    model: form.model,
+    topP: form.topP,
+    frequencyPenalty: form.frequencyPenalty,
+    presencePenalty: form.presencePenalty,
+    maxTokens: form.maxTokens,
+    captureThinking: form.captureThinking,
+    showThinking: form.showThinking,
+    thinkingEffort: form.thinkingEffort || 'high',
+  };
+}
+
+function profileDefaults(providerId) {
+  if (providerId === 'claude') {
+    return {
+      model: 'claude-sonnet-5-5',
+      topP: 1,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      maxTokens: 4096,
+      captureThinking: true,
+      showThinking: false,
+      thinkingEffort: 'high',
+    };
+  }
+  if (providerId === 'openai') {
+    return {
+      model: 'gpt-4o-mini',
+      topP: 1,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      maxTokens: 1024,
+      captureThinking: true,
+      showThinking: false,
+      thinkingEffort: 'high',
+    };
+  }
+  return {
+    model: '',
+    topP: 1,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+    maxTokens: 512,
+    captureThinking: true,
+    showThinking: false,
+    thinkingEffort: 'high',
+  };
+}
 
 const CONSOLE_COLORS = {
   master: '#C4B5FD',
@@ -165,6 +227,8 @@ function LlmLabPage({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [probing, setProbing] = useState(false);
+  const [providerProfiles, setProviderProfiles] = useState({});
+  const [chartInference, setChartInference] = useState(emptyChartInference);
 
   const session = getSession();
   const providers = meta.providers?.length ? meta.providers : FALLBACK_PROVIDERS;
@@ -174,11 +238,17 @@ function LlmLabPage({ onBack }) {
   );
   const isNvidia = selected?.id === 'nvidia' || selected?.keyLocked;
   const isCustom = Boolean(selected?.custom || meta.providerCustom);
+  const isClaude = selected?.id === 'claude' || selected?.api === 'anthropic';
+  const supportsOpenAiPenalties = !isClaude;
 
   const patch = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+  const patchChart = (key, value) => setChartInference((prev) => ({ ...prev, [key]: value }));
 
   const applyLab = (lab, nextTrace) => {
     setAddingCustom(false);
+    const profiles = lab.providerProfiles && typeof lab.providerProfiles === 'object' ? lab.providerProfiles : {};
+    setProviderProfiles(profiles);
+    setChartInference({ ...emptyChartInference, ...(lab.chartInference || {}) });
     setForm({
       masterPrompt: lab.masterPrompt || '',
       provider: lab.provider || 'nvidia',
@@ -191,6 +261,7 @@ function LlmLabPage({ onBack }) {
       maxTokens: Number(lab.maxTokens ?? 512),
       captureThinking: lab.captureThinking !== false,
       showThinking: Boolean(lab.showThinking),
+      thinkingEffort: lab.thinkingEffort || 'high',
     });
     setMeta({
       apiKeyMasked: lab.apiKeyMasked || '',
@@ -239,13 +310,25 @@ function LlmLabPage({ onBack }) {
     }
     setAddingCustom(false);
     const next = providers.find((p) => p.id === value) || providers[0];
-    setForm((prev) => ({
-      ...prev,
-      provider: next.id,
-      model: next.defaultModel || prev.model,
-      baseUrl: next.custom ? next.baseUrl || '' : '',
-      apiKey: '',
-    }));
+    setForm((prev) => {
+      const savedProfiles = {
+        ...providerProfiles,
+        [prev.provider]: pickProviderParams(prev),
+      };
+      setProviderProfiles(savedProfiles);
+      const profile = {
+        ...profileDefaults(next.id),
+        ...(savedProfiles[next.id] || {}),
+        model: savedProfiles[next.id]?.model || next.defaultModel || profileDefaults(next.id).model,
+      };
+      return {
+        ...prev,
+        provider: next.id,
+        baseUrl: next.custom ? next.baseUrl || '' : '',
+        apiKey: '',
+        ...profile,
+      };
+    });
     setMeta((prev) => ({
       ...prev,
       apiKeySet: Boolean(next.apiKeySet),
@@ -307,6 +390,12 @@ function LlmLabPage({ onBack }) {
       return;
     }
 
+    const profiles = {
+      ...providerProfiles,
+      [form.provider]: pickProviderParams(form),
+    };
+    setProviderProfiles(profiles);
+
     const payload = {
       masterPrompt: form.masterPrompt,
       provider: form.provider,
@@ -317,6 +406,9 @@ function LlmLabPage({ onBack }) {
       maxTokens: form.maxTokens,
       captureThinking: form.captureThinking,
       showThinking: form.showThinking,
+      thinkingEffort: form.thinkingEffort,
+      providerProfiles: profiles,
+      chartInference,
     };
     if (isCustom) payload.baseUrl = form.baseUrl.trim();
     // NVIDIA: never send a key. Others: only send when user pastes a new one.
@@ -552,16 +644,35 @@ function LlmLabPage({ onBack }) {
                 />
               )}
 
+              {isClaude && (
+                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#F7F4FB', border: '1px solid #E6DEEF' }}>
+                  <Typography sx={{ fontSize: 13, color: '#3A3550' }}>
+                    Claude mapping: <code>max_tokens</code>, thinking via{' '}
+                    <code>thinking.type.adaptive</code> (or <code>enabled</code> +{' '}
+                    <code>budget_tokens</code> on older models). Frequency/presence penalties are not
+                    sent. <code>top_p</code> is omitted while thinking is on. Use Max tokens ≥ 4096
+                    when capturing thinking.
+                  </Typography>
+                </Box>
+              )}
+
+              <Typography sx={{ fontSize: 12, color: '#6A6580' }}>
+                Settings below are stored per provider — switch NVIDIA / OpenAI / Claude without
+                losing each profile.
+              </Typography>
+
               <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
                 <Box>
                   <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1E1B2E' }}>
                     Top P · {form.topP.toFixed(2)}
+                    {isClaude && form.captureThinking ? ' (ignored while thinking)' : ''}
                   </Typography>
                   <Slider
                     min={0}
                     max={1}
                     step={0.05}
                     value={form.topP}
+                    disabled={isClaude && form.captureThinking}
                     onChange={(_e, value) => patch('topP', value)}
                     sx={{ color: '#6B4FA0' }}
                   />
@@ -572,34 +683,56 @@ function LlmLabPage({ onBack }) {
                   size="small"
                   value={form.maxTokens}
                   onChange={(e) => patch('maxTokens', Number(e.target.value))}
-                  slotProps={{ htmlInput: { min: 64, max: 8192 } }}
+                  helperText={isClaude ? 'Raised automatically if thinking needs more headroom' : undefined}
+                  slotProps={{ htmlInput: { min: 64, max: 16384 } }}
                 />
-                <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1E1B2E' }}>
-                    Frequency penalty · {form.frequencyPenalty.toFixed(2)}
-                  </Typography>
-                  <Slider
-                    min={-2}
-                    max={2}
-                    step={0.05}
-                    value={form.frequencyPenalty}
-                    onChange={(_e, value) => patch('frequencyPenalty', value)}
-                    sx={{ color: '#6B4FA0' }}
-                  />
-                </Box>
-                <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1E1B2E' }}>
-                    Presence penalty · {form.presencePenalty.toFixed(2)}
-                  </Typography>
-                  <Slider
-                    min={-2}
-                    max={2}
-                    step={0.05}
-                    value={form.presencePenalty}
-                    onChange={(_e, value) => patch('presencePenalty', value)}
-                    sx={{ color: '#6B4FA0' }}
-                  />
-                </Box>
+                {supportsOpenAiPenalties && (
+                  <Box>
+                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1E1B2E' }}>
+                      Frequency penalty · {form.frequencyPenalty.toFixed(2)}
+                    </Typography>
+                    <Slider
+                      min={-2}
+                      max={2}
+                      step={0.05}
+                      value={form.frequencyPenalty}
+                      onChange={(_e, value) => patch('frequencyPenalty', value)}
+                      sx={{ color: '#6B4FA0' }}
+                    />
+                  </Box>
+                )}
+                {supportsOpenAiPenalties && (
+                  <Box>
+                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1E1B2E' }}>
+                      Presence penalty · {form.presencePenalty.toFixed(2)}
+                    </Typography>
+                    <Slider
+                      min={-2}
+                      max={2}
+                      step={0.05}
+                      value={form.presencePenalty}
+                      onChange={(_e, value) => patch('presencePenalty', value)}
+                      sx={{ color: '#6B4FA0' }}
+                    />
+                  </Box>
+                )}
+                {isClaude && (
+                  <TextField
+                    select
+                    label="Thinking effort (adaptive)"
+                    size="small"
+                    value={form.thinkingEffort || 'high'}
+                    onChange={(e) => patch('thinkingEffort', e.target.value)}
+                    disabled={!form.captureThinking}
+                    helperText="Maps to output_config.effort on Claude 4.7+ / 5.x"
+                  >
+                    {['low', 'medium', 'high', 'xhigh', 'max'].map((level) => (
+                      <MenuItem key={level} value={level}>
+                        {level}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
               </Box>
 
               <Box sx={{ display: 'grid', gap: 1 }}>
@@ -622,7 +755,11 @@ function LlmLabPage({ onBack }) {
                       disabled={!form.captureThinking}
                     />
                   }
-                  label="Include thinking in chat API payload (console always shows captured thinking)"
+                  label={
+                    isClaude
+                      ? 'Show thinking text (Claude display: summarized vs omitted)'
+                      : 'Include thinking in chat API payload (console always shows captured thinking)'
+                  }
                 />
               </Box>
 
@@ -669,6 +806,92 @@ function LlmLabPage({ onBack }) {
               )}
             </>
           )}
+        </Box>
+
+        <Box className="panel" sx={{ mt: 2.5, display: 'grid', gap: 1.5 }}>
+          <Typography component="h3" sx={{ fontWeight: 700, color: '#1E1B2E', fontSize: 18 }}>
+            Chart inference connector
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: '#4A4560' }}>
+            Optional third-party chart/Jyotish API. Map birth and chart fields into a custom JSON
+            body with <code>{'{{birth.date}}'}</code>, <code>{'{{birth.time}}'}</code>,{' '}
+            <code>{'{{birth.lat}}'}</code>, <code>{'{{birth.lon}}'}</code>,{' '}
+            <code>{'{{birth.tz}}'}</code>, <code>{'{{birth.place}}'}</code>,{' '}
+            <code>{'{{chart.lagna}}'}</code>, <code>{'{{chart.moonSign}}'}</code>,{' '}
+            <code>{'{{chart.dasha}}'}</code>. Secrets: <code>{'{{secret.NAME}}'}</code> (Cloudflare
+            secret). The response is appended into the LLM chart context.
+          </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={Boolean(chartInference.enabled)}
+                onChange={(e) => patchChart('enabled', e.target.checked)}
+                color="secondary"
+              />
+            }
+            label="Call chart inference API before each LLM answer"
+          />
+          <TextField
+            label="Inference API URL"
+            size="small"
+            value={chartInference.baseUrl}
+            onChange={(e) => patchChart('baseUrl', e.target.value)}
+            fullWidth
+            placeholder="https://api.example.com/v1/chart"
+            disabled={!chartInference.enabled}
+          />
+          <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
+            <TextField
+              select
+              label="Method"
+              size="small"
+              value={chartInference.method || 'POST'}
+              onChange={(e) => patchChart('method', e.target.value)}
+              disabled={!chartInference.enabled}
+            >
+              <MenuItem value="POST">POST</MenuItem>
+              <MenuItem value="GET">GET</MenuItem>
+            </TextField>
+            <TextField
+              label="Cloudflare secret name"
+              size="small"
+              value={chartInference.secretName || ''}
+              onChange={(e) => patchChart('secretName', e.target.value)}
+              disabled={!chartInference.enabled}
+              helperText="Referenced as {{secret.<name>}} in headers/body"
+            />
+          </Box>
+          <TextField
+            label="Headers JSON"
+            size="small"
+            value={chartInference.headersJson}
+            onChange={(e) => patchChart('headersJson', e.target.value)}
+            fullWidth
+            multiline
+            minRows={3}
+            disabled={!chartInference.enabled}
+            sx={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+          />
+          <TextField
+            label="Body template"
+            size="small"
+            value={chartInference.bodyTemplate}
+            onChange={(e) => patchChart('bodyTemplate', e.target.value)}
+            fullWidth
+            multiline
+            minRows={5}
+            disabled={!chartInference.enabled}
+            sx={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+          />
+          <TextField
+            label="Response JSON path (optional)"
+            size="small"
+            value={chartInference.responseJsonPath}
+            onChange={(e) => patchChart('responseJsonPath', e.target.value)}
+            fullWidth
+            disabled={!chartInference.enabled}
+            helperText="e.g. data.chart — empty uses the whole response body"
+          />
         </Box>
 
         <Box className="panel" sx={{ mt: 2.5, display: 'grid', gap: 1.5 }}>
