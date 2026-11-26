@@ -47,7 +47,7 @@ Workers Builds should run `CI=true npm run build` and publish via `wrangler.toml
 | `NVIDIA_API_KEY` or `OPENAI_API_KEY` | Live LLM answers (**Worker secret only** — never in the browser / CRA `.env`) |
 | `OPENAI_BASE_URL` | OpenAI-compatible base (default `https://api.openai.com/v1`; NVIDIA NIM: `https://integrate.api.nvidia.com/v1`) |
 | `OPENAI_MODEL` | Model id (e.g. `nvidia/nemotron-3.5-bolt-e4b`) |
-| `MASTER_PROMPT` | Optional master instructions appended to every LLM system prompt |
+| `MASTER_PROMPT` | Seed text for the LLM Lab master-prompt box (fully overridable there) |
 | `GOOGLE_PLACES_API_KEY` | Google Places Autocomplete + Place Details + Time Zone |
 | `BETA_INVITE_CODE` | Server-side invite check for sync/Places routes |
 

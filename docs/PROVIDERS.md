@@ -23,7 +23,7 @@ LLMs do not remember prior turns. The **host** must resend context every request
 
 Kundali is sent as **JSON** (not XML) — same shape as our canonical chart, compacted for the model (`chartJsonForPrompt` / `buildLlmChartContext`).
 
-Flow: `askOracle` → `askWithPrivacy` → anonymise → assemble → Worker `/api/chat` (appends **MASTER_PROMPT**) → LLM.
+Flow: `askOracle` → `askWithPrivacy` → anonymise → assemble → Worker `/api/chat` (uses Lab master prompt, seeded from **MASTER_PROMPT**) → LLM.
 
 Swapping OpenAI / Claude / a private model = new `AnswerProvider` adapter only. The Worker already accepts `summary`, `history`, `anonymousId`, `modelTier`.
 
@@ -64,4 +64,4 @@ Aligned with mother-repo `docs/ARCHITECTURE.md` Phase B (providers) → Phase C 
 | Worker `NVIDIA_API_KEY` or `OPENAI_API_KEY` | Real LLM behind `/api/chat` (never in the browser) |
 | Worker `OPENAI_BASE_URL` | OpenAI-compatible host; NVIDIA NIM → `https://integrate.api.nvidia.com/v1` |
 | Worker `OPENAI_MODEL` | Model id for that host |
-| Worker `MASTER_PROMPT` | Extra system text appended on every LLM call (override default in `wrangler.toml` / dashboard) |
+| LLM Lab master prompt | Editable system text for every LLM call; seeded from `MASTER_PROMPT` / code default, fully overridable (including clear) |

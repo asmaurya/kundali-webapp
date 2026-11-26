@@ -107,7 +107,8 @@ beforeEach(() => {
           return {
             ok: true,
             lab: {
-              masterPrompt: '',
+              masterPrompt: 'Ground every answer…',
+              masterPromptCustom: false,
               provider: 'nvidia',
               providerLabel: 'NVIDIA NIM',
               baseUrl: 'https://integrate.api.nvidia.com/v1',

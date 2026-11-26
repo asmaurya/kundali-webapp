@@ -5,16 +5,30 @@
 
 const TONE = `Be accurate and neutral. State only what the chart supports. Do not add reassurance or positivity the chart does not support. Do not give exact dates, amounts, scores or exact outcomes; give periods and tendencies. Do not discuss death, lifespan, pregnancy, medical or psychological diagnoses. Do not promise outcomes. Religion-neutral: no deities or temple prescriptions; practical habits are fine. Keep answers under 120 words. Output ONLY the final user-facing answer — no planning, no rule checklists, no phrases like "The user wants" or "Constraints to follow".`;
 
-/** Built-in default; dashboard/wrangler MASTER_PROMPT is appended on every LLM call. */
-const DEFAULT_MASTER_PROMPT = `Always use the querent kundali JSON in context. Chat history and the rolling summary are for coherence only — natal facts come from the JSON. If a family kundali JSON is present, include both charts in the reading.`;
+/**
+ * Seed text for the LLM Lab "Master chat prompt" box.
+ * Once the lab saves `masterPrompt` (even empty), that value is the sole source —
+ * nothing is silently appended from code or wrangler vars.
+ */
+const DEFAULT_MASTER_PROMPT = `Ground every answer in the querent kundali JSON provided in context. Chat history and the rolling summary are for coherence only — natal facts come from the JSON. When a family kundali JSON is also present, compare both charts and state which placements support the reading. Prefer precise Jyotish references (lagna, houses, grahas, dasha) over generic advice.`;
 
 const DEFAULT_INVITE = 'KUNDALI-BETA';
 
+/** Default seed shown / used until the lab textbox is saved. */
+function defaultMasterPromptText(env) {
+  return String(env?.MASTER_PROMPT || DEFAULT_MASTER_PROMPT).trim();
+}
+
+/**
+ * Lab textbox wins completely after first save (`masterPromptCustom`).
+ * Empty saved string = no master prompt (not a fallback to hardcoded text).
+ */
 function masterPrompt(env, lab = null) {
-  const fromLab = String(lab?.masterPrompt || '').trim();
-  if (fromLab) return fromLab;
-  const fromEnv = String(env.MASTER_PROMPT || '').trim();
-  return fromEnv || DEFAULT_MASTER_PROMPT;
+  if (lab?.masterPromptCustom) {
+    return String(lab.masterPrompt || '').trim();
+  }
+  const stored = String(lab?.masterPrompt || '').trim();
+  return stored || defaultMasterPromptText(env);
 }
 
 const LLM_LAB_KEY = 'llm:lab';
@@ -111,7 +125,9 @@ const DEFAULT_CHART_INFERENCE = {
 };
 
 const DEFAULT_LLM_LAB = {
-  masterPrompt: '',
+  /** Pre-filled default; editable in LLM Lab and fully overridable (including clear). */
+  masterPrompt: DEFAULT_MASTER_PROMPT,
+  masterPromptCustom: false,
   provider: 'nvidia',
   model: '',
   topP: 1,
@@ -535,7 +551,9 @@ function publicLlmLabView(lab, env) {
     };
   });
   return {
-    masterPrompt: lab.masterPrompt || '',
+    // Always return the effective text so the Lab textbox shows what chat will use.
+    masterPrompt: masterPrompt(env, lab),
+    masterPromptCustom: Boolean(lab.masterPromptCustom),
     provider: resolvedProvider,
     providerLabel: resolvedMeta.label,
     providerCustom: Boolean(resolvedMeta.custom),
@@ -573,7 +591,7 @@ function publicLlmLabView(lab, env) {
     providers: [...builtInProviders, ...customProviders],
     customProviders,
     defaults: {
-      masterPrompt: String(env.MASTER_PROMPT || DEFAULT_MASTER_PROMPT),
+      masterPrompt: defaultMasterPromptText(env),
       model: env.OPENAI_MODEL || LLM_PROVIDERS.nvidia.defaultModel,
       provider: 'nvidia',
     },
@@ -845,7 +863,12 @@ function buildPromptParts(env, lab, question, chartContext, locale, summary, cfg
   ]
     .filter(Boolean)
     .join('\n\n');
-  const systemInstructions = [TONE, langLine, thinkingInstruction, `Master prompt:\n${master}`]
+  const systemInstructions = [
+    TONE,
+    langLine,
+    thinkingInstruction,
+    master ? `Master prompt:\n${master}` : '',
+  ]
     .filter(Boolean)
     .join('\n\n');
   // Live API: instructions + chart in one system message (single copy of the chart).
@@ -1821,7 +1844,10 @@ async function handleLlmLab(request, env) {
       keysConfigured: { ...(existing.keysConfigured || {}) },
     };
     delete next.apiKey;
-    if (typeof body.masterPrompt === 'string') next.masterPrompt = body.masterPrompt.slice(0, 12000);
+    if (typeof body.masterPrompt === 'string') {
+      next.masterPrompt = body.masterPrompt.slice(0, 12000);
+      next.masterPromptCustom = true;
+    }
     if (typeof body.model === 'string') next.model = body.model.trim().slice(0, 200);
     if (body.topP != null) next.topP = clampNumber(body.topP, 0, 1, existing.topP);
     if (body.frequencyPenalty != null) {

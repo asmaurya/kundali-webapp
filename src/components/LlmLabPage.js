@@ -282,7 +282,8 @@ function LlmLabPage({ onBack }) {
       setChartInference(ci);
     }
     setForm({
-      masterPrompt: lab.masterPrompt || '',
+      // Worker returns the effective prompt (default seeded until customized).
+      masterPrompt: lab.masterPrompt || lab.defaults?.masterPrompt || '',
       provider: lab.provider || 'nvidia',
       model: lab.model || '',
       baseUrl: lab.providerCustom ? lab.baseUrl || '' : '',
@@ -547,11 +548,7 @@ function LlmLabPage({ onBack }) {
                 multiline
                 minRows={5}
                 fullWidth
-                helperText={
-                  meta.defaults?.masterPrompt
-                    ? 'Leave blank to use the Worker MASTER_PROMPT default.'
-                    : 'Instructs every Astro Chat answer.'
-                }
+                helperText="Pre-filled with the default. Edit or clear freely — whatever you save here is the full master prompt for every Astro Chat answer (nothing else is appended)."
                 placeholder={meta.defaults?.masterPrompt || 'Ground every answer in the querent kundali JSON…'}
               />
 
