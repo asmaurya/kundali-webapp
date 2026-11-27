@@ -8,6 +8,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -25,6 +26,12 @@ import {
   LLM_TOPICS,
   normalizeChartTopicMatrix,
 } from '../lib/chartTopicMatrix';
+import {
+  DEFAULT_CHAT_CONTINUE_MESSAGE_LIMIT,
+  DEFAULT_CHAT_CONTINUE_TOKEN_LIMIT,
+  parseLimit,
+  readChatContinueLimits,
+} from '../lib/chatContinueLimits';
 
 function SettingsPage({ onBack }) {
   const navigate = useNavigate();
@@ -34,6 +41,10 @@ function SettingsPage({ onBack }) {
   );
   const [matrixStatus, setMatrixStatus] = useState('');
   const [savingMatrix, setSavingMatrix] = useState(false);
+  const initialLimits = readChatContinueLimits(getSettings());
+  const [messageLimitDraft, setMessageLimitDraft] = useState(String(initialLimits.messageLimit));
+  const [tokenLimitDraft, setTokenLimitDraft] = useState(String(initialLimits.tokenLimit));
+  const [limitsStatus, setLimitsStatus] = useState('');
 
   const statusLabel =
     syncStatus === 'synced'
@@ -88,6 +99,41 @@ function SettingsPage({ onBack }) {
     setMatrixStatus('Defaults restored — click Save to keep them.');
   };
 
+  const persistContinueLimits = async (partial) => {
+    const settings = saveSettings({ ...getSettings(), ...partial });
+    setLimitsStatus('Applied immediately on this device.');
+    const session = getSession();
+    if (session?.email && session?.inviteCode) {
+      const ok = await pushRemoteSettings(session, settings);
+      setLimitsStatus(
+        ok ? 'Applied immediately and synced.' : 'Applied locally; sync failed.'
+      );
+    }
+  };
+
+  const commitMessageLimit = (raw) => {
+    const next = parseLimit(raw, -1);
+    setMessageLimitDraft(String(next));
+    if (next === getSettings().chatContinueMessageLimit) return;
+    persistContinueLimits({ chatContinueMessageLimit: next });
+  };
+
+  const commitTokenLimit = (raw) => {
+    const next = parseLimit(raw, -1);
+    setTokenLimitDraft(String(next));
+    if (next === getSettings().chatContinueTokenLimit) return;
+    persistContinueLimits({ chatContinueTokenLimit: next });
+  };
+
+  const onLimitDraftChange = (raw, setDraft, commit) => {
+    setDraft(raw);
+    setLimitsStatus('');
+    // Commit as soon as the field holds a complete integer (incl. -1) — live, no refresh.
+    if (/^-?\d+$/.test(String(raw).trim())) {
+      commit(raw);
+    }
+  };
+
   return (
     <Box className="stack-page">
       <Box className="hill-deco" sx={{ opacity: 0.7 }} />
@@ -134,6 +180,61 @@ function SettingsPage({ onBack }) {
           </ToggleButtonGroup>
 
           <Typography sx={{ mt: 2, fontSize: 13, color: '#6A6580' }}>{statusLabel}</Typography>
+        </Box>
+
+        <Box className="panel" sx={{ mt: 2.5 }}>
+          <Typography sx={{ fontWeight: 700, color: '#1E1B2E' }}>
+            Start new chat from summary
+          </Typography>
+          <Typography sx={{ mt: 0.5, fontSize: 14, color: '#4A4560' }}>
+            Soft nudge in Astro Chat when a thread gets long. Changes apply immediately — no page
+            refresh. Set either value to <strong>−1</strong> to disable that trigger (both are −1 by
+            default right now).
+          </Typography>
+          <Box
+            sx={{
+              mt: 2,
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+            }}
+          >
+            <TextField
+              label="User message count"
+              type="number"
+              size="small"
+              value={messageLimitDraft}
+              onChange={(e) =>
+                onLimitDraftChange(e.target.value, setMessageLimitDraft, commitMessageLimit)
+              }
+              onBlur={() => commitMessageLimit(messageLimitDraft)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+              }}
+              helperText={`−1 disables. Suggested when on: ${DEFAULT_CHAT_CONTINUE_MESSAGE_LIMIT}.`}
+              inputProps={{ step: 1 }}
+              fullWidth
+            />
+            <TextField
+              label="Token limit"
+              type="number"
+              size="small"
+              value={tokenLimitDraft}
+              onChange={(e) =>
+                onLimitDraftChange(e.target.value, setTokenLimitDraft, commitTokenLimit)
+              }
+              onBlur={() => commitTokenLimit(tokenLimitDraft)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+              }}
+              helperText={`−1 disables. Suggested when on: ${DEFAULT_CHAT_CONTINUE_TOKEN_LIMIT}. Uses recorded LLM usage.`}
+              inputProps={{ step: 1 }}
+              fullWidth
+            />
+          </Box>
+          {limitsStatus && (
+            <Typography sx={{ mt: 1.5, fontSize: 13, color: '#2F6B52' }}>{limitsStatus}</Typography>
+          )}
         </Box>
 
         <Box className="panel" sx={{ mt: 2.5 }}>

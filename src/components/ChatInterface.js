@@ -24,13 +24,21 @@ import SpaIcon from '@mui/icons-material/Spa';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import { ASTROLOGERS, useChat } from '../chatStore';
+import { getSettings } from '../betaSession';
 import { useLocale } from '../i18n/LocaleContext';
 import { listProfiles } from '../lib/profiles';
 import { downloadLlmPacket } from '../lib/llmPacketDownload';
 import { topicIdFromLabel } from '../lib/chartTopicMatrix';
+import {
+  DEFAULT_CHAT_CONTINUE_MESSAGE_LIMIT,
+  isLimitEnabled,
+  readChatContinueLimits,
+  shouldShowContinueNudge,
+  totalChatTokens,
+} from '../lib/chatContinueLimits';
 
-/** Free-tier soft nudge: after this many user messages, offer a fresh chat from summary. */
-export const FREE_CHAT_USER_MESSAGE_LIMIT = 5;
+/** Suggested default when re-enabling the message nudge in Settings (shipped off as -1). */
+export const FREE_CHAT_USER_MESSAGE_LIMIT = DEFAULT_CHAT_CONTINUE_MESSAGE_LIMIT;
 
 function ChatInterface() {
   const location = useLocation();
@@ -57,6 +65,9 @@ function ChatInterface() {
   const [summaryAnchor, setSummaryAnchor] = useState(null);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [continuing, setContinuing] = useState(false);
+  const [continueLimits, setContinueLimits] = useState(() =>
+    readChatContinueLimits(getSettings())
+  );
   const inputRef = useRef(null);
   const messagesRef = useRef(null);
   const bottomRef = useRef(null);
@@ -127,13 +138,41 @@ function ChatInterface() {
     return () => el.removeEventListener('scroll', onScroll);
   }, [active?.id]);
 
+  // Apply Settings continue-limits immediately (no hard refresh).
+  useEffect(() => {
+    const sync = (event) => {
+      setContinueLimits(readChatContinueLimits(event?.detail || getSettings()));
+    };
+    window.addEventListener('kundali-settings', sync);
+    return () => window.removeEventListener('kundali-settings', sync);
+  }, []);
+
   const lastMessageText = active?.messages?.[active.messages.length - 1]?.text;
   const messageCount = active?.messages?.length || 0;
   const userMessageCount = useMemo(
     () => (active?.messages || []).filter((m) => m.role === 'user').length,
     [active?.messages]
   );
-  const showContinueNudge = userMessageCount >= FREE_CHAT_USER_MESSAGE_LIMIT;
+  const tokenTotal = useMemo(
+    () => totalChatTokens(active?.messages || []),
+    [active?.messages]
+  );
+  const showContinueNudge = shouldShowContinueNudge({
+    userMessageCount,
+    tokenTotal,
+    messageLimit: continueLimits.messageLimit,
+    tokenLimit: continueLimits.tokenLimit,
+  });
+  const continueNudgeDetail = useMemo(() => {
+    const parts = [];
+    if (isLimitEnabled(continueLimits.messageLimit)) {
+      parts.push(`${continueLimits.messageLimit} user messages`);
+    }
+    if (isLimitEnabled(continueLimits.tokenLimit)) {
+      parts.push(`~${continueLimits.tokenLimit} tokens`);
+    }
+    return parts.join(' or ');
+  }, [continueLimits.messageLimit, continueLimits.tokenLimit]);
 
   // Auto-scroll when messages grow or the latest reply updates (LLM / human / own send).
   useEffect(() => {
@@ -526,7 +565,7 @@ function ChatInterface() {
                 This chat is getting long
               </Typography>
               <Typography className="chat-continue-card__body">
-                After {FREE_CHAT_USER_MESSAGE_LIMIT} messages, a fresh chat with a short summary
+                After {continueNudgeDetail || 'a longer chat'}, a fresh chat with a short summary
                 keeps answers sharper. Your current chat stays in the rail.
               </Typography>
               <Button

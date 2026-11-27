@@ -118,11 +118,20 @@ export function saveFamilyMembers(members) {
   writeJson(STORAGE_KEYS.family, members);
 }
 
+function parseStoredLimit(value, fallback = -1) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.trunc(n);
+}
+
 export function getSettings() {
   const raw = readJson(STORAGE_KEYS.settings, { locale: 'en' });
   return {
     locale: raw?.locale === 'hi' ? 'hi' : 'en',
     chartTopicMatrix: raw?.chartTopicMatrix || null,
+    // -1 disables the soft "start new chat" nudge for that trigger.
+    chatContinueMessageLimit: parseStoredLimit(raw?.chatContinueMessageLimit, -1),
+    chatContinueTokenLimit: parseStoredLimit(raw?.chatContinueTokenLimit, -1),
     updatedAt: raw?.updatedAt || null,
   };
 }
@@ -133,6 +142,14 @@ export function saveSettings(settings) {
     locale: settings?.locale === 'hi' ? 'hi' : settings?.locale === 'en' ? 'en' : prev.locale,
     chartTopicMatrix:
       settings?.chartTopicMatrix !== undefined ? settings.chartTopicMatrix : prev.chartTopicMatrix,
+    chatContinueMessageLimit:
+      settings?.chatContinueMessageLimit !== undefined
+        ? parseStoredLimit(settings.chatContinueMessageLimit, prev.chatContinueMessageLimit)
+        : prev.chatContinueMessageLimit,
+    chatContinueTokenLimit:
+      settings?.chatContinueTokenLimit !== undefined
+        ? parseStoredLimit(settings.chatContinueTokenLimit, prev.chatContinueTokenLimit)
+        : prev.chatContinueTokenLimit,
     updatedAt: new Date().toISOString(),
   };
   writeJson(STORAGE_KEYS.settings, next);
